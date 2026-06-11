@@ -1,0 +1,904 @@
+@import "tailwindcss";
+
+html {
+  height: 100%;
+  overflow: hidden;
+  font-size: var(--font-size-base, clamp(12px, 0.6vw, 14px));
+}
+
+/* ========== 默认主题（清新蓝白） ========== */
+:root,
+.theme-default {
+  --bg-primary: #f3f6fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #edf2f8;
+  --card-bg: #ffffff;
+  --card-border: #dfe7f0;
+  --text-primary: #172033;
+  --text-secondary: #526075;
+  --text-muted: #8a97aa;
+  --border-color: #dbe4ee;
+  --border-light: #eaf0f7;
+  --accent-color: #2367d9;
+  --accent-hover: #1d55b8;
+  --accent-light: #e8f1ff;
+  --accent-text: #1f5fca;
+  --accent-contrast: #ffffff;
+  --info-bg: #e8f1ff;
+  --info-text: #1f5fca;
+  --note-bg: #f3ecff;
+  --note-text: #7651d4;
+  --note-border: #c9b7f4;
+  --mark-bg: #fff4bf;
+  --mark-text: #59410b;
+  --highlight-bg: #fff9db;
+  --highlight-ring: #e8b61f;
+  --rating-text: #d58a00;
+  --like-text: #dc5268;
+  --rank-gold-bg: #fff2bd;
+  --rank-gold-text: #8d5e00;
+  --rank-bronze-bg: #ffe7d1;
+  --rank-bronze-text: #a64d13;
+  --chart-grid: #e8eef6;
+  --chart-line: #d88c19;
+  --chart-bar: #2787d9;
+  --chart-bar-alt: #2aa8bf;
+  --chart-bar-muted: #7c66d9;
+  --tooltip-bg: #ffffff;
+  --code-bg: #f5f7fb;
+  --code-border: #e1e8f0;
+  --input-bg: #ffffff;
+  --input-border: #d4deea;
+  --hover-bg: #f1f5fa;
+  --hover-text: #172033;
+  --success-bg: #eaf8ef;
+  --success-text: #247a45;
+  --warning-bg: #fff4df;
+  --warning-text: #9b5a14;
+  --error-bg: #fef2f2;
+  --error-text: #b91c1c;
+  --danger-hover: #991b1b;
+  --gradient-hero: linear-gradient(135deg, #eaf3ff 0%, #f4efff 52%, #fff6e8 100%);
+  --gradient-card-green: linear-gradient(135deg, #eefaf2 0%, #e8f6f2 100%);
+  --gradient-card-blue: linear-gradient(135deg, #e9f2ff 0%, #edf0ff 100%);
+  --gradient-card-purple: linear-gradient(135deg, #f3edff 0%, #f7efff 100%);
+  --header-bg: rgba(255, 255, 255, 0.86);
+  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.05);
+  --shadow-md: 0 8px 18px -8px rgba(23, 32, 51, 0.16);
+  --shadow-lg: 0 16px 36px -16px rgba(23, 32, 51, 0.22);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 深色模式（深邃暗夜） ========== */
+.theme-dark {
+  --bg-primary: #0f1522;
+  --bg-secondary: #171f30;
+  --bg-tertiary: #202b3e;
+  --card-bg: #182133;
+  --card-border: #263449;
+  --text-primary: #eef3f8;
+  --text-secondary: #b2bed0;
+  --text-muted: #75839a;
+  --border-color: #314056;
+  --border-light: #223047;
+  --accent-color: #5aa2ff;
+  --accent-hover: #7ab5ff;
+  --accent-light: #203a5e;
+  --accent-text: #8cc4ff;
+  --accent-contrast: #06101f;
+  --info-bg: #203a5e;
+  --info-text: #8cc4ff;
+  --note-bg: #30254b;
+  --note-text: #bea8ff;
+  --note-border: #8067cf;
+  --mark-bg: #5a4614;
+  --mark-text: #ffe39a;
+  --highlight-bg: #3d3218;
+  --highlight-ring: #f0c44d;
+  --rating-text: #f5c451;
+  --like-text: #ff8798;
+  --rank-gold-bg: #4a3915;
+  --rank-gold-text: #f3cc62;
+  --rank-bronze-bg: #4a2d1e;
+  --rank-bronze-text: #f0a06c;
+  --chart-grid: #29364b;
+  --chart-line: #f4b04d;
+  --chart-bar: #64a7ff;
+  --chart-bar-alt: #4fc3d8;
+  --chart-bar-muted: #a58bff;
+  --tooltip-bg: #182133;
+  --code-bg: #111b2b;
+  --code-border: #2a3850;
+  --input-bg: #121b2b;
+  --input-border: #314056;
+  --hover-bg: #223047;
+  --hover-text: #f4f7fb;
+  --success-bg: #123422;
+  --success-text: #70dc98;
+  --warning-bg: #423014;
+  --warning-text: #f2c15d;
+  --error-bg: #411b22;
+  --error-text: #ff8a98;
+  --danger-hover: #ff9aaa;
+  --gradient-hero: linear-gradient(135deg, #172945 0%, #202748 52%, #2b2239 100%);
+  --gradient-card-green: linear-gradient(135deg, #16301f 0%, #172d2b 100%);
+  --gradient-card-blue: linear-gradient(135deg, #182f4d 0%, #202a4b 100%);
+  --gradient-card-purple: linear-gradient(135deg, #292042 0%, #322543 100%);
+  --header-bg: rgba(15, 21, 34, 0.88);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.34);
+  --shadow-md: 0 10px 24px -10px rgba(0, 0, 0, 0.52);
+  --shadow-lg: 0 18px 42px -16px rgba(0, 0, 0, 0.64);
+  --disabled-opacity: 0.32;
+}
+
+/* ========== 护眼模式（暖茶书卷） ========== */
+.theme-eye {
+  --bg-primary: #f4eedf;
+  --bg-secondary: #fffaf0;
+  --bg-tertiary: #eee4cf;
+  --card-bg: #fffaf0;
+  --card-border: #e4d7ba;
+  --text-primary: #47392a;
+  --text-secondary: #6f5f49;
+  --text-muted: #9b896b;
+  --border-color: #dbcda9;
+  --border-light: #eee5d0;
+  --accent-color: #736145;
+  --accent-hover: #5e4e37;
+  --accent-light: #eee5d0;
+  --accent-text: #5e4e37;
+  --accent-contrast: #fffaf0;
+  --info-bg: #e9e2cf;
+  --info-text: #615033;
+  --note-bg: #efe3d4;
+  --note-text: #7b5f40;
+  --note-border: #c6aa7d;
+  --mark-bg: #f2e5a9;
+  --mark-text: #594a23;
+  --highlight-bg: #f7edc8;
+  --highlight-ring: #b9953c;
+  --rating-text: #b48224;
+  --like-text: #b85f67;
+  --rank-gold-bg: #f0df9f;
+  --rank-gold-text: #74541d;
+  --rank-bronze-bg: #efd7bc;
+  --rank-bronze-text: #8b5431;
+  --chart-grid: #e0d4b9;
+  --chart-line: #b47b2c;
+  --chart-bar: #6f7950;
+  --chart-bar-alt: #668073;
+  --chart-bar-muted: #8a7154;
+  --tooltip-bg: #fffaf0;
+  --code-bg: #f5eedf;
+  --code-border: #e0d4b9;
+  --input-bg: #fffaf0;
+  --input-border: #d5c49e;
+  --hover-bg: #f0e7d4;
+  --hover-text: #3b2e20;
+  --success-bg: #e9f0df;
+  --success-text: #4d7438;
+  --warning-bg: #f5e7c8;
+  --warning-text: #805b29;
+  --error-bg: #f4dfdc;
+  --error-text: #984549;
+  --danger-hover: #853b40;
+  --gradient-hero: linear-gradient(135deg, #efe5ce 0%, #f8f1e0 52%, #efe1cd 100%);
+  --gradient-card-green: linear-gradient(135deg, #edf2df 0%, #f4efd9 100%);
+  --gradient-card-blue: linear-gradient(135deg, #eee8d2 0%, #f7efd9 100%);
+  --gradient-card-purple: linear-gradient(135deg, #f0e5d5 0%, #f7eddc 100%);
+  --header-bg: rgba(255, 250, 240, 0.88);
+  --shadow-sm: 0 1px 2px rgba(71, 57, 42, 0.08);
+  --shadow-md: 0 8px 18px -10px rgba(71, 57, 42, 0.22);
+  --shadow-lg: 0 18px 36px -18px rgba(71, 57, 42, 0.28);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 浅绿模式（纸页浅茵） ========== */
+.theme-green {
+  --bg-primary: #e6f3e9;
+  --bg-secondary: #f3fbf3;
+  --bg-tertiary: #dbeee0;
+  --card-bg: #f7fff5;
+  --card-border: #cfe4d0;
+  --text-primary: #18251f;
+  --text-secondary: #4a6255;
+  --text-muted: #7f9788;
+  --border-color: #c4dcc9;
+  --border-light: #dcece0;
+  --accent-color: #4f7b62;
+  --accent-hover: #3f6852;
+  --accent-light: #d8eadc;
+  --accent-text: #3f6852;
+  --accent-contrast: #f8fff6;
+  --info-bg: #d8eadc;
+  --info-text: #3f6852;
+  --note-bg: #e5ead1;
+  --note-text: #667545;
+  --note-border: #b6c38d;
+  --mark-bg: #e8e6aa;
+  --mark-text: #4e4b1e;
+  --highlight-bg: #eef0c3;
+  --highlight-ring: #a9b45c;
+  --rating-text: #9d8429;
+  --like-text: #b35d68;
+  --rank-gold-bg: #e7df9d;
+  --rank-gold-text: #645b1f;
+  --rank-bronze-bg: #ead6bd;
+  --rank-bronze-text: #7a5634;
+  --chart-grid: #cfe1d2;
+  --chart-line: #a9792a;
+  --chart-bar: #5d8b70;
+  --chart-bar-alt: #609286;
+  --chart-bar-muted: #7f8760;
+  --tooltip-bg: #f7fff5;
+  --code-bg: #edf6ed;
+  --code-border: #cfdfcf;
+  --input-bg: #f8fff6;
+  --input-border: #bcd5c2;
+  --hover-bg: #dfefdf;
+  --hover-text: #15221d;
+  --success-bg: #dceddf;
+  --success-text: #3f744d;
+  --warning-bg: #eee8c4;
+  --warning-text: #776024;
+  --error-bg: #f1dedc;
+  --error-text: #944b52;
+  --danger-hover: #803e46;
+  --gradient-hero: linear-gradient(135deg, #dcefe0 0%, #edf8e8 52%, #d6ece0 100%);
+  --gradient-card-green: linear-gradient(135deg, #dff0df 0%, #edf6de 100%);
+  --gradient-card-blue: linear-gradient(135deg, #dfeee4 0%, #e7f0de 100%);
+  --gradient-card-purple: linear-gradient(135deg, #e5ecd7 0%, #eef3df 100%);
+  --header-bg: rgba(243, 251, 243, 0.88);
+  --shadow-sm: 0 1px 2px rgba(36, 70, 51, 0.07);
+  --shadow-md: 0 8px 18px -10px rgba(36, 70, 51, 0.2);
+  --shadow-lg: 0 18px 36px -18px rgba(36, 70, 51, 0.28);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 纸白模式（清透纸页） ========== */
+.theme-paper {
+  --bg-primary: #f3f2ee;
+  --bg-secondary: #fbfaf7;
+  --bg-tertiary: #eceae4;
+  --card-bg: #fffefa;
+  --card-border: #dedbd3;
+  --text-primary: #171717;
+  --text-secondary: #4b4a46;
+  --text-muted: #8d8b85;
+  --border-color: #d6d2c9;
+  --border-light: #ebe8df;
+  --accent-color: #70706a;
+  --accent-hover: #555650;
+  --accent-light: #f2f0ea;
+  --accent-text: #565650;
+  --accent-contrast: #ffffff;
+  --info-bg: #f2f0ea;
+  --info-text: #565650;
+  --note-bg: #eee9df;
+  --note-text: #72644e;
+  --note-border: #cfc4b1;
+  --mark-bg: #f2e8b8;
+  --mark-text: #57471d;
+  --highlight-bg: #f6edc9;
+  --highlight-ring: #c6a24a;
+  --rating-text: #b07b22;
+  --like-text: #a35461;
+  --rank-gold-bg: #efe1a8;
+  --rank-gold-text: #6b521c;
+  --rank-bronze-bg: #ead7bf;
+  --rank-bronze-text: #765231;
+  --chart-grid: #ddd9cf;
+  --chart-line: #ad7d32;
+  --chart-bar: #70706a;
+  --chart-bar-alt: #7a8987;
+  --chart-bar-muted: #8a7c65;
+  --tooltip-bg: #fffefa;
+  --code-bg: #f1eee6;
+  --code-border: #ded9ce;
+  --input-bg: #fffefa;
+  --input-border: #d6d2c9;
+  --hover-bg: #efede6;
+  --hover-text: #171717;
+  --success-bg: #e7efe5;
+  --success-text: #4b7147;
+  --warning-bg: #f3e8cc;
+  --warning-text: #765323;
+  --error-bg: #f0dddd;
+  --error-text: #8f444a;
+  --danger-hover: #78353a;
+  --gradient-hero: linear-gradient(135deg, #fbfaf7 0%, #f0eee8 52%, #fffefa 100%);
+  --gradient-card-green: linear-gradient(135deg, #edf2e9 0%, #f5f2e9 100%);
+  --gradient-card-blue: linear-gradient(135deg, #edf0ef 0%, #f5f3ed 100%);
+  --gradient-card-purple: linear-gradient(135deg, #f0ece5 0%, #f7f4ed 100%);
+  --header-bg: rgba(255, 254, 250, 0.88);
+  --shadow-sm: 0 1px 2px rgba(34, 34, 30, 0.06);
+  --shadow-md: 0 8px 18px -10px rgba(34, 34, 30, 0.2);
+  --shadow-lg: 0 18px 36px -18px rgba(34, 34, 30, 0.28);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 冷灰模式（薄雾纸纹） ========== */
+.theme-mist {
+  --bg-primary: #e8eeef;
+  --bg-secondary: #f5f8f8;
+  --bg-tertiary: #dde6e8;
+  --card-bg: #f9fbfb;
+  --card-border: #d4dcdd;
+  --text-primary: #172022;
+  --text-secondary: #4c5b60;
+  --text-muted: #849397;
+  --border-color: #c9d4d6;
+  --border-light: #e1e9ea;
+  --accent-color: #587178;
+  --accent-hover: #435d64;
+  --accent-light: #e4ecee;
+  --accent-text: #455f66;
+  --accent-contrast: #f7fbfb;
+  --info-bg: #e4ecee;
+  --info-text: #455f66;
+  --note-bg: #e5e9ee;
+  --note-text: #60708b;
+  --note-border: #b7c2d0;
+  --mark-bg: #e8e2b3;
+  --mark-text: #4f4a21;
+  --highlight-bg: #f0eac6;
+  --highlight-ring: #a99b4e;
+  --rating-text: #9c8129;
+  --like-text: #a55c68;
+  --rank-gold-bg: #e7dea6;
+  --rank-gold-text: #62571f;
+  --rank-bronze-bg: #e6d4c2;
+  --rank-bronze-text: #735133;
+  --chart-grid: #ccd8da;
+  --chart-line: #9b7a30;
+  --chart-bar: #587178;
+  --chart-bar-alt: #5c8588;
+  --chart-bar-muted: #78808f;
+  --tooltip-bg: #f9fbfb;
+  --code-bg: #edf3f3;
+  --code-border: #d5dfe0;
+  --input-bg: #fbfdfd;
+  --input-border: #bfcccf;
+  --hover-bg: #e4ecee;
+  --hover-text: #11191b;
+  --success-bg: #dfece5;
+  --success-text: #417052;
+  --warning-bg: #eee8c8;
+  --warning-text: #725d25;
+  --error-bg: #ecdedf;
+  --error-text: #8d4951;
+  --danger-hover: #793e46;
+  --gradient-hero: linear-gradient(135deg, #eef4f4 0%, #f9fbfb 52%, #e2eaec 100%);
+  --gradient-card-green: linear-gradient(135deg, #e5efe9 0%, #edf3ed 100%);
+  --gradient-card-blue: linear-gradient(135deg, #e2ecee 0%, #edf2f4 100%);
+  --gradient-card-purple: linear-gradient(135deg, #e9ecf2 0%, #f3f4f6 100%);
+  --header-bg: rgba(249, 251, 251, 0.88);
+  --shadow-sm: 0 1px 2px rgba(23, 32, 34, 0.06);
+  --shadow-md: 0 8px 18px -10px rgba(23, 32, 34, 0.2);
+  --shadow-lg: 0 18px 36px -18px rgba(23, 32, 34, 0.28);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 杏暖模式（落日书页） ========== */
+.theme-apricot {
+  --bg-primary: #f8dfbf;
+  --bg-secondary: #fff1df;
+  --bg-tertiary: #f3d4ad;
+  --card-bg: #fff5e8;
+  --card-border: #efd0ac;
+  --text-primary: #211711;
+  --text-secondary: #674d38;
+  --text-muted: #a88968;
+  --border-color: #e5c29a;
+  --border-light: #f5ddbd;
+  --accent-color: #b87530;
+  --accent-hover: #985d22;
+  --accent-light: #ffe3bd;
+  --accent-text: #935c25;
+  --accent-contrast: #fff8ef;
+  --info-bg: #ffe3bd;
+  --info-text: #935c25;
+  --note-bg: #f7dec7;
+  --note-text: #8b5b40;
+  --note-border: #d3a77d;
+  --mark-bg: #f5db94;
+  --mark-text: #584014;
+  --highlight-bg: #f8e1aa;
+  --highlight-ring: #cb8b2e;
+  --rating-text: #b46f18;
+  --like-text: #b45d64;
+  --rank-gold-bg: #efd58b;
+  --rank-gold-text: #6b4d12;
+  --rank-bronze-bg: #efc7a5;
+  --rank-bronze-text: #814b27;
+  --chart-grid: #eccfae;
+  --chart-line: #b86f24;
+  --chart-bar: #b87530;
+  --chart-bar-alt: #997a48;
+  --chart-bar-muted: #a36f64;
+  --tooltip-bg: #fff5e8;
+  --code-bg: #f8e5cf;
+  --code-border: #e7c6a3;
+  --input-bg: #fff8ef;
+  --input-border: #ddb88f;
+  --hover-bg: #f7e1c4;
+  --hover-text: #1b120d;
+  --success-bg: #e8eed7;
+  --success-text: #5b7434;
+  --warning-bg: #f2daa4;
+  --warning-text: #745018;
+  --error-bg: #f1d8d3;
+  --error-text: #93474b;
+  --danger-hover: #7d383c;
+  --gradient-hero: linear-gradient(135deg, #fff2df 0%, #ffe8c7 56%, #f2aa63 100%);
+  --gradient-card-green: linear-gradient(135deg, #edf1d9 0%, #fae4bf 100%);
+  --gradient-card-blue: linear-gradient(135deg, #f3e5d2 0%, #ffe4bd 100%);
+  --gradient-card-purple: linear-gradient(135deg, #f6dfd3 0%, #ffe1bf 100%);
+  --header-bg: rgba(255, 245, 232, 0.88);
+  --shadow-sm: 0 1px 2px rgba(103, 77, 56, 0.08);
+  --shadow-md: 0 8px 18px -10px rgba(103, 77, 56, 0.24);
+  --shadow-lg: 0 18px 36px -18px rgba(103, 77, 56, 0.32);
+  --disabled-opacity: 0.38;
+}
+
+/* ========== 月粉模式（柔粉月光） ========== */
+.theme-rose {
+  --bg-primary: #ead6d6;
+  --bg-secondary: #f9e8e6;
+  --bg-tertiary: #e5caca;
+  --card-bg: #fff2ef;
+  --card-border: #e8c8c9;
+  --text-primary: #211719;
+  --text-secondary: #684c50;
+  --text-muted: #a58589;
+  --border-color: #ddbfc0;
+  --border-light: #efd9d9;
+  --accent-color: #ad6c73;
+  --accent-hover: #92545c;
+  --accent-light: #f3d7d8;
+  --accent-text: #8d5159;
+  --accent-contrast: #fff5f3;
+  --info-bg: #f3d7d8;
+  --info-text: #8d5159;
+  --note-bg: #efd9e6;
+  --note-text: #866076;
+  --note-border: #cfadc0;
+  --mark-bg: #f0dfaa;
+  --mark-text: #5a491b;
+  --highlight-bg: #f4e7c3;
+  --highlight-ring: #bd9442;
+  --rating-text: #ad7426;
+  --like-text: #b05164;
+  --rank-gold-bg: #eadb9e;
+  --rank-gold-text: #6b5520;
+  --rank-bronze-bg: #ebc5b9;
+  --rank-bronze-text: #7f4634;
+  --chart-grid: #e5cccc;
+  --chart-line: #af7740;
+  --chart-bar: #ad6c73;
+  --chart-bar-alt: #b8897f;
+  --chart-bar-muted: #94738c;
+  --tooltip-bg: #fff2ef;
+  --code-bg: #f4dedc;
+  --code-border: #e4c4c4;
+  --input-bg: #fff6f3;
+  --input-border: #d7b5b8;
+  --hover-bg: #efd8d7;
+  --hover-text: #1b1113;
+  --success-bg: #e6eadb;
+  --success-text: #60723d;
+  --warning-bg: #efe2c2;
+  --warning-text: #775728;
+  --error-bg: #efd5d8;
+  --error-text: #91414c;
+  --danger-hover: #7a3540;
+  --gradient-hero: linear-gradient(135deg, #f9e8e6 0%, #f6d8d6 56%, #ead6d6 100%);
+  --gradient-card-green: linear-gradient(135deg, #e9eadf 0%, #f5dedd 100%);
+  --gradient-card-blue: linear-gradient(135deg, #eee0e3 0%, #f7e2df 100%);
+  --gradient-card-purple: linear-gradient(135deg, #f2dbe9 0%, #f8e3e1 100%);
+  --header-bg: rgba(255, 242, 239, 0.88);
+  --shadow-sm: 0 1px 2px rgba(104, 76, 80, 0.08);
+  --shadow-md: 0 8px 18px -10px rgba(104, 76, 80, 0.24);
+  --shadow-lg: 0 18px 36px -18px rgba(104, 76, 80, 0.32);
+  --disabled-opacity: 0.38;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease, font-family 0.15s ease;
+}
+
+body.font-serif {
+  font-family: 'Noto Serif SC', 'Source Han Serif SC', '思源宋体', 'Songti SC', 'SimSun', serif;
+}
+body.font-wenkai {
+  font-family: 'LXGW WenKai', '霞鹜文楷', 'LXGWWenKai', 'KaiTi', '楷体', cursive;
+}
+body.font-yousong {
+  font-family: 'FZYouSong', '方正悠宋', 'FZYouSong GBK', '方正悠宋_GBK', 'Noto Serif SC', 'Songti SC', serif;
+}
+body.font-laosong {
+  font-family: 'JingHuaLaoSong', '京华老宋体', '华光老宋体', 'Noto Serif SC', 'Songti SC', serif;
+}
+body.font-notosans {
+  font-family: 'Noto Sans SC', '思源黑体', 'Source Han Sans SC', system-ui, sans-serif;
+}
+body.font-mashan {
+  font-family: 'Ma Shan Zheng', '马山正', 'KaiTi', '楷体', cursive;
+}
+body.font-zcool {
+  font-family: 'ZCOOL XiaoWei', '站酷小薇体', 'KaiTi', '楷体', serif;
+}
+
+
+.theme-green body {
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.42) 0, rgba(255, 255, 255, 0.42) 1px, transparent 1px),
+    radial-gradient(circle at 72% 48%, rgba(78, 123, 96, 0.08) 0, transparent 22%),
+    linear-gradient(135deg, rgba(235, 247, 232, 0.82), rgba(214, 236, 224, 0.82));
+  background-size: 18px 18px, 100% 100%, 100% 100%;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
+}
+
+.theme-green #root {
+  background-color: rgba(230, 243, 233, 0.82);
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(82, 120, 92, 0.05) 1px, transparent 1px);
+  background-size: 42px 42px, 42px 42px;
+}
+
+:where(.theme-paper, .theme-mist, .theme-apricot, .theme-rose) body {
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.36) 0, rgba(255, 255, 255, 0.36) 1px, transparent 1px),
+    radial-gradient(circle at 72% 22%, rgba(255, 255, 255, 0.2) 0, transparent 18%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0));
+  background-size: 16px 16px, 100% 100%, 100% 100%;
+}
+
+.theme-apricot body {
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.3) 0, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
+    radial-gradient(circle at 56% 100%, rgba(237, 134, 54, 0.24) 0, transparent 26%),
+    linear-gradient(180deg, rgba(255, 250, 242, 0.35), rgba(248, 181, 102, 0.2));
+}
+
+.theme-rose body {
+  background-image:
+    radial-gradient(circle at 82% 6%, rgba(255, 255, 255, 0.56) 0, rgba(255, 255, 255, 0.56) 28px, transparent 29px),
+    radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.28) 0, rgba(255, 255, 255, 0.28) 1px, transparent 1px),
+    linear-gradient(160deg, rgba(255, 245, 242, 0.36), rgba(220, 153, 160, 0.18));
+  background-size: 100% 100%, 16px 16px, 100% 100%;
+}
+
+:where(.theme-paper, .theme-mist, .theme-apricot, .theme-rose) #root {
+  background-color: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.15) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(60, 50, 42, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px, 44px 44px;
+}
+
+/* ========== 主题化 Tailwind 类覆盖 ========== */
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-white,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-white\/80,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-white\/90,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-white\/95 {
+  background-color: var(--card-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gray-50 {
+  background-color: var(--bg-secondary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gray-100 {
+  background-color: var(--bg-tertiary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gray-200 {
+  background-color: var(--border-light);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gray-500 {
+  background-color: var(--text-muted);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-50:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-100:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-200:hover {
+  background-color: var(--hover-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-600:hover {
+  background-color: var(--text-secondary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-900,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-800 {
+  color: var(--text-primary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-700,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-600 {
+  color: var(--text-secondary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-500,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-400 {
+  color: var(--text-muted);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-gray-300 {
+  color: var(--border-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:text-gray-900:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:text-gray-800:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:text-gray-700:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:text-gray-600:hover {
+  color: var(--hover-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-gray-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-gray-100 {
+  border-color: var(--card-border);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-gray-200,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-gray-300 {
+  border-color: var(--border-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-b,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-t {
+  border-color: var(--border-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) input:not([type="submit"]):not([type="button"]):not([type="reset"]),
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) select {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border-color: var(--input-border);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) input::placeholder {
+  color: var(--text-muted);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .focus\:ring-blue-400:focus,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .focus\:ring-blue-500:focus,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .ring-blue-500 {
+  --tw-ring-color: var(--accent-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .focus\:border-blue-400:focus,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .focus\:border-blue-500:focus {
+  border-color: var(--accent-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-100 {
+  background-color: var(--info-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-600,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-700 {
+  background-color: var(--accent-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-blue-600:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-blue-700:hover {
+  background-color: var(--accent-hover);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-blue-600,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-blue-700 {
+  color: var(--info-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-600.text-white,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-blue-700.text-white {
+  color: var(--accent-contrast);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-blue-100,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-blue-200 {
+  border-color: var(--accent-light);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-blue-500,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-blue-600,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-t-blue-600 {
+  border-color: var(--accent-color);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .shadow-blue-200 {
+  --tw-shadow-color: transparent;
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-purple-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-purple-50\/40,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-purple-100 {
+  background-color: var(--note-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-purple-500,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-purple-600,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-purple-700 {
+  color: var(--note-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-purple-300 {
+  border-color: var(--note-border);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-green-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-green-100 {
+  background-color: var(--success-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-green-500,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-green-600 {
+  color: var(--success-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-amber-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-amber-100,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-yellow-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-yellow-100 {
+  background-color: var(--warning-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-amber-700,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-amber-800,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-yellow-600,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-yellow-700 {
+  color: var(--warning-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-yellow-100:hover {
+  background-color: color-mix(in srgb, var(--warning-bg) 76%, var(--warning-text));
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-yellow-200 {
+  background-color: var(--mark-bg);
+  color: var(--mark-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .ring-yellow-400 {
+  box-shadow: 0 0 0 2px var(--highlight-ring);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-yellow-500 {
+  color: var(--rating-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-red-50 {
+  background-color: var(--error-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-red-400,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-red-500,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-red-600 {
+  color: var(--error-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:text-red-600:hover {
+  color: var(--danger-hover);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-orange-100 {
+  background-color: var(--rank-bronze-bg);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .text-orange-700 {
+  color: var(--rank-bronze-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-yellow-100.text-yellow-700 {
+  background-color: var(--rank-gold-bg);
+  color: var(--rank-gold-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-orange-100.text-orange-700 {
+  background-color: var(--rank-bronze-bg);
+  color: var(--rank-bronze-text);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gradient-to-br.from-green-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .from-green-50 {
+  background: var(--gradient-card-green);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gradient-to-br.from-blue-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .from-blue-50 {
+  background: var(--gradient-card-blue);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-gradient-to-br.from-purple-50,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .from-purple-50 {
+  background: var(--gradient-card-purple);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) code {
+  background-color: var(--code-bg);
+  border-color: var(--code-border);
+  color: var(--text-secondary);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .shadow-sm { box-shadow: var(--shadow-sm); }
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .shadow-md { box-shadow: var(--shadow-md); }
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .shadow-lg { box-shadow: var(--shadow-lg); }
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .disabled\:opacity-50:disabled { opacity: var(--disabled-opacity); }
+
+.settings-primary-button {
+  background-color: var(--accent-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-primary-button:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  box-shadow: var(--shadow-md);
+}
+
+/* 临时高亮目标 */
+.highlight-target {
+  box-shadow: 0 0 0 2px var(--highlight-ring);
+  background-color: var(--highlight-bg);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-tertiary); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* WeRead 想法/书评 HTML 内容样式 */
+.thought-html { white-space: pre-wrap; word-break: break-word; }
+.thought-html p { margin: 0 0 0.5em 0; }
+.thought-html p:last-child { margin-bottom: 0; }
+.thought-html br { display: block; content: ""; }
+.thought-html blockquote {
+  margin: 0.5em 0;
+  padding: 0.25em 0.75em;
+  border-left: 3px solid var(--accent-color);
+  color: var(--text-secondary);
+  background: var(--accent-light);
+  border-radius: 0 0.375rem 0.375rem 0;
+  opacity: 0.8;
+}
+.thought-html a { color: var(--accent-color); text-decoration: underline; }
+.thought-html img { max-width: 100%; height: auto; border-radius: 0.375rem; margin: 0.25em 0; }
+.thought-html ul, .thought-html ol { margin: 0.5em 0; padding-left: 1.25em; }
+
+/* ========== 主题过渡动画 ========== */
+*,
+*::before,
+*::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.2s ease, box-shadow 0.25s ease;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-fade-in { animation: fade-in 0.2s ease-out; }
+.animate-scale-in { animation: scale-in 0.2s ease-out; }
