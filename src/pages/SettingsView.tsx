@@ -417,11 +417,13 @@ function MarkdownContent({ content }: { content: string }) {
 }
 
 function renderInlineMarkdown(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
 
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) return <strong key={index} style={{ color: 'var(--text-primary)' }}>{part.slice(2, -2)}</strong>;
     if (part.startsWith('`') && part.endsWith('`')) return <code key={index} className="rounded px-1 py-0.5 text-xs" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>{part.slice(1, -1)}</code>;
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) return <a key={index} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2" style={{ color: 'var(--accent-color)' }}>{linkMatch[1]}</a>;
     return part;
   });
 }
