@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews, getApiKey } from '../services/weread';
 import type { BookItem, NotebookItem } from '../types/weread';
+import copyText from '../assets/copy-text.png';
 import type { HighlightTarget } from '../App';
 
 type SearchResultType = 'highlight' | 'thought';
@@ -42,6 +43,22 @@ function formatDate(timestamp: number): string {
   });
 }
 
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
 interface SearchViewProps {
   onSelectBook: (book: BookItem, target?: HighlightTarget) => void;
 }
@@ -54,6 +71,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [hasKey, setHasKey] = useState(() => !!getApiKey());
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const notebooksCacheRef = useRef<NotebookItem[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -287,10 +305,23 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
                     <span className="text-xs text-blue-600 sm:hidden">→</span>
                   </div>
                 </div>
-                <div
-                  className="text-gray-700 leading-relaxed"
+                <div className="relative">
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await copyToClipboard(result.content);
+                      setCopiedIdx(idx);
+                      setTimeout(() => setCopiedIdx(null), 1500);
+                    }}
+                    className="absolute top-0 right-0 w-7 h-7 flex items-center justify-center rounded-md text-xs transition-all hover:scale-110"
+                    style={{ backgroundColor: copiedIdx === idx ? 'rgba(46,204,113,0.15)' : 'var(--bg-tertiary)', color: copiedIdx === idx ? '#2ecc71' : 'var(--text-muted)' }}
+                    title={copiedIdx === idx ? '已复制 ✓' : '复制文本'}
+                  >{copiedIdx === idx ? '✓' : <img src={copyText} alt="" className="w-3.5 h-3.5 object-contain" />}</button>
+                  <div
+                    className="text-gray-700 leading-relaxed pr-8"
                   dangerouslySetInnerHTML={{ __html: result.highlight }}
                 />
+                </div>
                 <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
                   <span>{formatDate(result.createTime)}</span>
                   {result.chapterName && (
