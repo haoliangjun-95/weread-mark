@@ -2,7 +2,6 @@ import { useState } from 'react';
 import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
-import wechatGroupQr from '../assets/wechat-group.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
 import type { ViewType, ThemeType, FontType, FontSize, ExportStyleType } from '../App';
 
@@ -176,15 +175,11 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                 </div>
               </div>
               <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border-light)' }}>
-                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>扫码加作者 · 交流群</p>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>扫码加作者反馈意见</p>
                 <div className="flex gap-4">
                   <div className="flex-1 text-center">
                     <img src={authorQr} alt="作者二维码" className="w-40 h-40 mx-auto rounded-xl shadow-sm object-contain" />
                     <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>作者</p>
-                  </div>
-                  <div className="flex-1 text-center">
-                    <img src={wechatGroupQr} alt="交流群二维码" className="w-40 h-40 mx-auto rounded-xl shadow-sm object-contain" />
-                    <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>交流群</p>
                   </div>
                 </div>
               </div>
