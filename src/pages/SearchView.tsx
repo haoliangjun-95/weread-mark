@@ -13,6 +13,7 @@ interface SearchResult {
   type: SearchResultType;
   content: string;
   highlight: string;
+  htmlHighlight?: string;
   createTime: number;
   chapterName?: string;
   targetId: string;
@@ -29,10 +30,24 @@ function escapeHtml(text: string): string {
 }
 
 function highlightKeyword(text: string, keyword: string): string {
-  const safe = escapeHtml(text);
+  const safe = escapeHtml(text).replace(/\n/g, '<br>');
   if (!keyword.trim()) return safe;
   const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
   return safe.replace(regex, '<mark class="bg-yellow-200 text-gray-900 px-0.5 rounded">$1</mark>');
+}
+
+/** 在保留 HTML 标签的同时高亮关键词（用于 htmlContent 等富文本） */
+function highlightKeywordInHtml(html: string, keyword: string): string {
+  if (!keyword.trim()) return html;
+  const escapedKw = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 只对标签外的文本节点做高亮
+  return html.replace(/>([^<]*)</g, (_full, text) => {
+    const highlighted = text.replace(
+      new RegExp(`(${escapedKw})`, 'gi'),
+      '<mark class="bg-yellow-200 text-gray-900 px-0.5 rounded">$1</mark>',
+    );
+    return `>${highlighted}<`;
+  });
 }
 
 function formatDate(timestamp: number): string {
@@ -172,6 +187,9 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
 
               (rvData.reviews || []).forEach((rv) => {
                 if (rv.review.content?.toLowerCase().includes(lowerKw)) {
+                  const htmlHighlight = rv.review.htmlContent
+                    ? highlightKeywordInHtml(rv.review.htmlContent, kw)
+                    : undefined;
                   local.push({
                     bookId,
                     bookTitle: title,
@@ -179,6 +197,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
                     type: 'thought',
                     content: rv.review.content,
                     highlight: highlightKeyword(rv.review.content, kw),
+                    htmlHighlight,
                     createTime: rv.review.createTime,
                     chapterName: rv.review.chapterName,
                     targetId: rv.review.reviewId,
@@ -319,8 +338,8 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
                   >{copiedIdx === idx ? '✓' : <img src={copyText} alt="" className="w-3.5 h-3.5 object-contain" />}</button>
                   <div
                     className="text-gray-700 leading-relaxed pr-8"
-                  dangerouslySetInnerHTML={{ __html: result.highlight }}
-                />
+                    dangerouslySetInnerHTML={{ __html: result.htmlHighlight ?? result.highlight }}
+                  />
                 </div>
                 <div className="flex items-center gap-2 mt-3 text-xs text-gray-400">
                   <span>{formatDate(result.createTime)}</span>

@@ -52,7 +52,7 @@ export default function NotesView(props: NotesViewProps) {
   const stripHtml = (html: string): string => {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
+    return tmp.innerText || tmp.textContent || '';
   };
 
 
@@ -384,7 +384,7 @@ function BookNotesDetail({ book, onBack, highlightTarget, exportStyle, backLabel
   const stripHtml = (html: string): string => {
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || '';
+    return tmp.innerText || tmp.textContent || '';
   };
 
   const exportBookToPDF = async () => {
@@ -732,7 +732,7 @@ function sanitizeHtml(html: string): string {
 function stripHtml(html: string): string {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
+  return tmp.innerText || tmp.textContent || '';
 }
 
 async function copyToClipboard(text: string) {

@@ -198,7 +198,7 @@ export async function exportItemToImage(data: ExportImageData) {
       const tContent = document.createElement('div');
       tContent.style.cssText = `
         font-size:18px;line-height:1.7;color:${colors.textSecondary};
-        font-style:italic;word-break:break-word;
+        font-style:italic;word-break:break-word;white-space:pre-wrap;
       `;
       tContent.textContent = t.content;
       thoughtItem.appendChild(tContent);

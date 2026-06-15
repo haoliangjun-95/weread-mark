@@ -230,7 +230,7 @@ export default function ReviewsView() {
 function stripHtml(html: string): string {
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || '';
+  return tmp.innerText || tmp.textContent || '';
 }
 
 const COLLAPSED_MAX_HEIGHT = 180;
