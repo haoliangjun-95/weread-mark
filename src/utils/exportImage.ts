@@ -66,6 +66,10 @@ const stylePalettes: Record<ExportStyleType, {
 };
 
 function proxyCoverUrl(url: string): string {
+  // Tauri 环境下直接使用原始 URL，无需代理
+  if (import.meta.env.VITE_COVER_PROXY === 'false') {
+    return url;
+  }
   if (url.startsWith('https://cdn.weread.qq.com/')) {
     return '/cover-proxy-cdn/' + url.slice('https://cdn.weread.qq.com/'.length);
   }

@@ -34,6 +34,31 @@ npm run dev
 
 > 获取 API Key：前往 [微信读书](https://weread.qq.com/) 获取。
 
+### 桌面应用（Tauri）
+
+支持打包为 macOS / Windows / Linux 桌面应用，无需浏览器即可使用。
+
+```bash
+# 前提：安装 Rust 工具链
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# 安装依赖
+npm install
+
+# 开发模式（热更新）
+npm run tauri:dev
+
+# 生产构建
+npm run tauri:build
+```
+
+构建产物位于 `src-tauri/target/release/bundle/`：
+- **macOS**：`微痕.app` / `微痕_*.dmg`
+- **Windows**：`微痕_*.msi` / `微痕_*.exe`
+- **Linux**：`微痕_*.deb` / `微痕_*.AppImage`
+
+桌面版通过 `.env.tauri` 配置环境变量，直接请求微信读书 API，无需 Nginx 反向代理。
+
 ## 构建部署
 
 ```bash
@@ -80,25 +105,37 @@ server {
 ## 项目结构
 
 ```
-src/
-  components/      # 可复用 UI 组件（Header）
-  pages/           # 页面组件
-    SearchView.tsx   # 全文搜索
-    Dashboard.tsx    # 阅读看板（含导出功能）
-    ShelfView.tsx    # 书架（我的书架 + 已读完书架）
-    NotesView.tsx    # 笔记列表与详情（支持导出图片/PDF）
-    ReviewsView.tsx  # 书评墙（支持导出图片/PDF）
-    SettingsView.tsx  # 设置（主题/字体/字号/导出样式/箴言/关于）
-  services/
-    weread.ts        # 微信读书 API 调用层 + Key 管理
-  types/
-    weread.ts        # API 响应类型定义
-  utils/
-    filters.tsx      # 共享 FilterBar、useInfiniteScroll
-    exportImage.ts   # 导出图片功能（支持多风格，保留 HTML 格式）
-    exportPdf.ts     # 导出 PDF 功能（含书籍封面）
-  App.tsx            # 全局状态管理（主题/字体/字号/导出样式）
-  index.css         # 全局样式 + 主题变量 + 动画
+weread-mark/
+├── src/                  # 前端源码
+│   ├── components/       # 可复用 UI 组件（Header）
+│   ├── pages/            # 页面组件
+│   │   ├── SearchView.tsx   # 全文搜索
+│   │   ├── Dashboard.tsx    # 阅读看板（含导出功能）
+│   │   ├── ShelfView.tsx    # 书架（我的书架 + 已读完书架）
+│   │   ├── NotesView.tsx    # 笔记列表与详情（支持导出图片/PDF）
+│   │   ├── ReviewsView.tsx  # 书评墙（支持导出图片/PDF）
+│   │   └── SettingsView.tsx # 设置（主题/字体/字号/导出样式/箴言/关于）
+│   ├── services/
+│   │   └── weread.ts        # 微信读书 API 调用层 + Key 管理
+│   ├── types/
+│   │   └── weread.ts        # API 响应类型定义
+│   ├── utils/
+│   │   ├── filters.tsx      # 共享 FilterBar、useInfiniteScroll
+│   │   ├── exportImage.ts   # 导出图片功能（支持多风格，保留 HTML 格式）
+│   │   └── exportPdf.ts     # 导出 PDF 功能（含书籍封面）
+│   ├── App.tsx              # 全局状态管理（主题/字体/字号/导出样式）
+│   ├── index.css            # 全局样式 + 主题变量 + 动画
+│   └── main.tsx             # 入口
+├── src-tauri/            # Tauri 桌面应用（Rust）
+│   ├── tauri.conf.json      # Tauri 窗口/安全/打包配置
+│   ├── src/
+│   │   ├── main.rs          # Rust 入口
+│   │   └── lib.rs           # 应用启动逻辑
+│   └── capabilities/        # WebView 权限声明
+├── .env                   # 开发环境变量
+├── .env.tauri             # Tauri 构建环境变量
+├── vite.config.ts         # Vite 配置（含 API 代理）
+└── package.json
 ```
 
 ## 环境变量
@@ -106,6 +143,7 @@ src/
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
 | `VITE_WEREAD_API_URL` | API 网关地址 | `/api/agent/gateway` |
+| `VITE_COVER_PROXY` | 是否启用封面图片代理（Tauri 环境下设为 `false`） | `true` |
 | `VITE_SKILL_VERSION` | Skill 版本 | `1.0.3` |
 | `VITE_ICP_RECORD_NO` | ICP 备案号（留空则不显示） | - |
 | `VITE_ICP_RECORD_URL` | ICP 备案链接 | - |
@@ -116,6 +154,7 @@ src/
 - Vite 8 + Tailwind CSS v4
 - Recharts（数据可视化）
 - html2canvas（图片导出）
+- Tauri v2（桌面应用打包）
 
 ## 开源协议
 

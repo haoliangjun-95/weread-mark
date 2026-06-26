@@ -21,6 +21,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   server: {
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'https://i.weread.qq.com',

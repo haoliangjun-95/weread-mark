@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment files (contain local secrets/config)
+.env
+.env.local
+.env.*.local
+
 # Build & cache
 .vite/
 .cache/
@@ -21,6 +26,9 @@ coverage/
 *.tsbuildinfo
 .superpowers/
 .worktrees/
+
+# Tauri
+src-tauri/target
 
 # Editor directories and files
 .vscode/*
