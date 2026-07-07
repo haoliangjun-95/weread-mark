@@ -8,7 +8,7 @@ import type {
 } from '../types/weread';
 
 const API_URL = import.meta.env.VITE_WEREAD_API_URL || '/api/agent/gateway';
-const SKILL_VERSION = import.meta.env.VITE_SKILL_VERSION || '1.0.3';
+const SKILL_VERSION = import.meta.env.VITE_SKILL_VERSION || '1.0.4';
 const API_KEY_STORAGE = 'weread-api-key';
 
 export function getApiKey(): string {

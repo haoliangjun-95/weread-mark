@@ -140,13 +140,13 @@ weread-mark/
 
 ## 环境变量
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
+| 变量名 | 说明 | 默认值                  | 
+|--------|------|----------------------|
 | `VITE_WEREAD_API_URL` | API 网关地址 | `/api/agent/gateway` |
-| `VITE_COVER_PROXY` | 是否启用封面图片代理（Tauri 环境下设为 `false`） | `true` |
-| `VITE_SKILL_VERSION` | Skill 版本 | `1.0.3` |
-| `VITE_ICP_RECORD_NO` | ICP 备案号（留空则不显示） | - |
-| `VITE_ICP_RECORD_URL` | ICP 备案链接 | - |
+| `VITE_COVER_PROXY` | 是否启用封面图片代理（Tauri 环境下设为 `false`） | `true`               |
+| `VITE_SKILL_VERSION` | Skill 版本 | `1.0.4`              |
+| `VITE_ICP_RECORD_NO` | ICP 备案号（留空则不显示） | -                    |
+| `VITE_ICP_RECORD_URL` | ICP 备案链接 | -                    |
 
 ## 技术栈
 
