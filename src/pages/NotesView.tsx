@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/weread';
-import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews } from '../services/weread';
+import { fetchBookmarks, fetchBookReviews } from '../services/weread';
+import { getNotebooks, getBookDetail } from '../services/dataService';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
@@ -37,8 +38,8 @@ export default function NotesView(props: NotesViewProps) {
   const loadNotebooks = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAllNotebooks();
-      setNotebooks(data.books || []);
+      const books = await getNotebooks();
+      setNotebooks(books);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notebooks');
@@ -357,13 +358,12 @@ function BookNotesDetail({ book, onBack, highlightTarget, exportStyle, backLabel
     try {
       setLoading(true);
       setDetailError(null);
-      const [bmData, rvData] = await Promise.all([
-        fetchBookmarks(book.bookId),
-        fetchBookReviews(book.bookId),
-      ]);
-      setBookmarks(bmData.updated || []);
-      setChapters(bmData.chapters || []);
-      setReviews(rvData.reviews || []);
+      const detail = await getBookDetail(book.bookId);
+      if (detail) {
+        setBookmarks(detail.bookmarks);
+        setChapters(detail.chapters);
+        setReviews(detail.reviews);
+      }
     } catch (err) {
       console.error('加载书籍详情失败：', err);
       setDetailError(err instanceof Error ? err.message : '加载笔记详情失败');

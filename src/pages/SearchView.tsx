@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews, getApiKey } from '../services/weread';
+import { searchLocal, isSynced, isTauri } from '../services/dataService';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import type { BookItem, NotebookItem } from '../types/weread';
 import copyText from '../assets/copy-text.png';
@@ -93,6 +94,17 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
   const notebooksCacheRef = useRef<NotebookItem[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastSearchedRef = useRef<string>('');
+  const [localMode, setLocalMode] = useState(false);
+  const [canSyncHint, setCanSyncHint] = useState(false);
+
+  // 桌面版：已同步则搜索走本地 FTS；未同步则展示「同步后可秒搜」提示
+  useEffect(() => {
+    if (!isTauri) return;
+    void isSynced().then(synced => {
+      if (synced) setLocalMode(true);
+      else setCanSyncHint(true);
+    });
+  }, []);
 
   useEffect(() => {
     const onStorage = () => setHasKey(!!getApiKey());
@@ -132,6 +144,31 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
     setProgress({ done: 0, total: 0 });
     setFailedBooks([]);
     setDisplayCount(30);
+
+    // 本地 FTS 秒搜（桌面版已同步）；失败或未同步回落在线流式搜索
+    if (localMode) {
+      try {
+        const local = await searchLocal(kw);
+        if (local && !ac.signal.aborted) {
+          setResults(local.map(item => ({
+            bookId: item.book.bookId,
+            bookTitle: item.book.title,
+            bookAuthor: item.book.author,
+            type: item.kind,
+            content: item.content,
+            highlight: highlightKeyword(item.content, kw),
+            createTime: item.createTime,
+            chapterName: item.chapterName,
+            targetId: item.targetId,
+            book: item.book,
+          })));
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // 本地搜索异常，继续走在线
+      }
+    }
 
     try {
       let books = notebooksCacheRef.current;
@@ -238,7 +275,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
         setLoading(false);
       }
     }
-  }, [keyword]);
+  }, [keyword, localMode]);
 
   const hasMoreResults = displayCount < results.length;
   const sentinelRef = useInfiniteScroll(hasMoreResults, () => setDisplayCount(c => c + 30), displayCount);
@@ -298,6 +335,19 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
           </button>
         )}
       </div>
+
+      {canSyncHint && hasKey && (
+        <div className="mb-4 px-4 py-2.5 rounded-xl text-sm flex items-center justify-between gap-3"
+          style={{ backgroundColor: 'var(--accent-light)', color: 'var(--accent-text)' }}>
+          <span>同步数据到本地后，搜索毫秒级出结果，且可离线使用</span>
+          <button
+            onClick={() => { window.location.hash = '#/settings'; }}
+            className="flex-shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            去同步
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="text-center py-10">

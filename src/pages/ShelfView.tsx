@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { BookItem } from '../types/weread';
-import { fetchShelf, fetchAllNotebooks, fetchBookReviews } from '../services/weread';
+import { fetchShelf, fetchBookReviews } from '../services/weread';
+import { getNotebooks, getShelfBooks, hasBookReview } from '../services/dataService';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
 import { SkeletonGrid } from '../components/Skeleton';
@@ -133,17 +134,20 @@ function ShelfTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?: Hi
     try {
       setLoading(true);
       setError(null);
-      const shelfData = await fetchShelf();
-      const books = (shelfData.books || []).filter(b => b.bookId);
+      // 本地库已同步时直接读本地（含无笔记的书），否则走在线 API
+      const localBooks = await getShelfBooks();
+      const books = localBooks
+        ? localBooks.filter(b => b.bookId)
+        : ((await fetchShelf()).books || []).filter(b => b.bookId);
       setShelfBooks(books);
       setLoading(false);
 
       // 笔记 & 想法数 & 阅读进度后台异步加载
-      fetchAllNotebooks().then(notebooksData => {
+      getNotebooks().then(notebooks => {
         const nm: Record<string, number> = {};
         const tm: Record<string, number> = {};
         const pm: Record<string, number> = {};
-        notebooksData.books.forEach(nb => {
+        notebooks.forEach(nb => {
           nm[nb.bookId] = nb.noteCount;
           tm[nb.bookId] = nb.reviewCount;
           if (nb.readingProgress !== undefined) pm[nb.bookId] = nb.readingProgress;
@@ -187,6 +191,8 @@ function ShelfTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?: Hi
         const chunk = candidates.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(
           chunk.map(async b => {
+            const local = await hasBookReview(b.bookId);
+            if (local !== null) return { id: b.bookId, hasReview: local };
             const rv = await fetchBookReviews(b.bookId);
             const hasReview = (rv.reviews || []).some(r => r.review?.type === 4);
             return { id: b.bookId, hasReview };
@@ -253,8 +259,8 @@ function FinishedTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?:
     try {
       setLoading(true);
       setError(null);
-      const notebooksData = await fetchAllNotebooks();
-      const finishedNbs = notebooksData.books.filter(nb => nb.markedStatus === 4 && nb.book);
+      const notebooks = await getNotebooks();
+      const finishedNbs = notebooks.filter(nb => nb.markedStatus === 4 && nb.book);
       const finished = finishedNbs.map(nb => nb.book as BookItem);
       setFinishedBooks(finished);
       const nm: Record<string, number> = {};
@@ -301,6 +307,8 @@ function FinishedTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?:
         const chunk = candidates.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(
           chunk.map(async b => {
+            const local = await hasBookReview(b.bookId);
+            if (local !== null) return { id: b.bookId, hasReview: local };
             const rv = await fetchBookReviews(b.bookId);
             const hasReview = (rv.reviews || []).some(r => r.review?.type === 4);
             return { id: b.bookId, hasReview };

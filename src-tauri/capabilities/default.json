@@ -4,6 +4,7 @@
   "description": "默认权限配置",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "sql:default"
   ]
 }

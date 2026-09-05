@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
+import { syncAll, getLastSyncAt, getLocalStats, isTauri } from '../services/localDb';
+import type { SyncProgress, LocalStats } from '../services/localDb';
+import { markSynced } from '../services/dataService';
+import { showToast } from '../utils/toast';
 import type { ViewType, ThemeType, FontType, FontSize, ExportStyleType } from '../App';
 
 interface SettingsViewProps {
@@ -79,6 +83,97 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
   );
 }
 
+/** 本地数据同步卡片（仅桌面版渲染）：同步全量书架/笔记到 SQLite，本地秒读 + 可离线 */
+function SyncCard() {
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [stats, setStats] = useState<LocalStats | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    const [t, s] = await Promise.all([getLastSyncAt(), getLocalStats()]);
+    setLastSyncAt(t);
+    setStats(s);
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(refreshStatus);
+  }, [refreshStatus]);
+
+  const handleSync = async () => {
+    if (syncing) return;
+    if (!getApiKey()) {
+      showToast('请先配置 API Key', 'error');
+      return;
+    }
+    setSyncing(true);
+    setProgress({ done: 0, total: 0, phase: 'books' });
+    try {
+      await syncAll(p => setProgress(p));
+      markSynced();
+      showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
+      await refreshStatus();
+    } catch (err) {
+      console.error('同步失败：', err);
+      showToast(`同步失败：${err instanceof Error ? err.message : '请重试'}`, 'error');
+    } finally {
+      setSyncing(false);
+      setProgress(null);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border p-5" style={cardStyle}>
+      <SectionTitle
+        title="本地数据同步"
+        desc="将书架、划线、想法、书评同步到本地数据库，同步后读取毫秒级、可离线使用。"
+      />
+      <div className="space-y-3">
+        {stats && stats.bookCount > 0 && (
+          <div className="rounded-xl border px-3 py-2.5 text-xs leading-relaxed"
+            style={{ ...subtlePanelStyle, color: 'var(--text-secondary)' }}>
+            <p>
+              📚 {stats.bookCount} 本书 · 📝 {stats.noteBookCount} 本有笔记 ·
+              共 {stats.bookmarkCount} 条划线 + {stats.reviewCount} 条想法/书评
+            </p>
+            {lastSyncAt && (
+              <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                上次同步：{new Date(lastSyncAt * 1000).toLocaleString('zh-CN')}
+              </p>
+            )}
+          </div>
+        )}
+        {syncing && progress && (
+          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            {progress.phase === 'books'
+              ? '正在同步书目列表...'
+              : `正在同步笔记内容 ${progress.done}/${progress.total} 本`}
+            <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: progress.phase === 'books' || progress.total === 0
+                    ? '8%'
+                    : `${Math.round((progress.done / progress.total) * 100)}%`,
+                  backgroundColor: 'var(--accent-color)',
+                }}
+              />
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          className="settings-primary-button w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {syncing ? '同步中...' : lastSyncAt ? '重新同步' : '同步到本地'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SelectedBadge({ color }: { color: string }) {
   return (
     <span
@@ -143,6 +238,11 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
       {/* 移动端：API 配置置顶 */}
       <div className="lg:hidden mb-6">
         <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
+        {isTauri && (
+          <div className="mt-5">
+            <SyncCard />
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
@@ -151,6 +251,8 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
           <div className="hidden lg:block">
             <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
           </div>
+
+          {isTauri && <SyncCard />}
 
           <section className="rounded-2xl border p-5" style={cardStyle}>
             <SectionTitle title="关于微痕" desc="让阅读留下温柔的痕迹" />
