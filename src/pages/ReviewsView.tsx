@@ -4,6 +4,7 @@ import { fetchAllNotebooks, fetchBookReviews } from '../services/weread';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { exportItemToImage } from '../utils/exportImage';
+import { showToast } from '../utils/toast';
 import type { ExportStyleType } from '../App';
 import exportImg from '../assets/export-img.png';
 import exportPdf from '../assets/export-pdf.png';
@@ -363,6 +364,10 @@ function ReviewCard({ item }: { item: MyReview }) {
                   stars,
                   style: exportStyle,
                 });
+                showToast('图片已导出', 'success');
+              } catch (err) {
+                console.error('导出图片失败：', err);
+                showToast('导出图片失败，请重试', 'error');
               } finally {
                 setExporting(false);
               }
@@ -373,16 +378,19 @@ function ReviewCard({ item }: { item: MyReview }) {
             title={exporting ? '正在生成...' : '导出图片'}
           >{exporting ? '⏳' : <span className="w-4 h-4 sm:w-5 sm:h-5 block" style={{ backgroundImage: `url(${exportImg})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />}</button>
           <button
-            onClick={() => exportReviewToPdf({
-              bookTitle: book.title || '',
-              bookAuthor: book.author || '',
-              bookCover: book.cover,
-              stars,
-              createTime: formatDate(review.createTime),
-              likesCount: item.likesCount,
-              htmlContent: review.htmlContent,
-              textContent: review.content,
-            })}
+            onClick={() => {
+              const ok = exportReviewToPdf({
+                bookTitle: book.title || '',
+                bookAuthor: book.author || '',
+                bookCover: book.cover,
+                stars,
+                createTime: formatDate(review.createTime),
+                likesCount: item.likesCount,
+                htmlContent: review.htmlContent,
+                textContent: review.content,
+              });
+              if (!ok) showToast('弹窗被浏览器拦截，请允许弹窗后重试', 'error');
+            }}
             className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-sm transition-colors hover:bg-gray-100 active:scale-95"
             style={{ color: 'var(--text-muted)' }}
             title="导出PDF"

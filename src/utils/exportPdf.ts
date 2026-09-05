@@ -20,12 +20,29 @@ function sanitizeHtml(html: string): string {
 }
 
 
+/** 书名等用户数据要嵌入 <script> 字符串字面量，必须转义引号与反斜杠 */
+function escapeJsString(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c');
+}
+
+function openPrintWindow(doc: string): boolean {
+  const win = window.open('', '_blank');
+  if (!win) {
+    // 弹窗被拦截时不能静默失败，返回 false 让调用方提示用户
+    return false;
+  }
+  win.document.write(doc);
+  win.document.close();
+  return true;
+}
+
 function resolveCoverUrl(url?: string): string {
   if (!url) return '';
   if (url.startsWith('http')) return url;
   return 'https://weread-1258476243.file.myqcloud.com' + url;
 }
-export function exportReviewToPdf(review: ExportReview) {
+/** 返回 false 表示弹窗被浏览器拦截 */
+export function exportReviewToPdf(review: ExportReview): boolean {
   const starsHtml = '★'.repeat(review.stars) + '☆'.repeat(5 - review.stars);
   const contentHtml = review.htmlContent
     ? sanitizeHtml(review.htmlContent)
@@ -119,18 +136,15 @@ export function exportReviewToPdf(review: ExportReview) {
   </div>
   <div class="content">${contentHtml}</div>
   <div class="footer">由 微痕 导出</div>
-  <script>document.title='${review.bookTitle}-书评';window.onload=function(){window.print()};</script>
+  <script>document.title='${escapeJsString(review.bookTitle)}-书评';window.onload=function(){window.print()};</script>
 </body>
 </html>`;
 
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(doc);
-    win.document.close();
-  }
+  return openPrintWindow(doc);
 }
 
-export function exportReviewsToPdf(reviews: ExportReview[], title: string) {
+/** 返回 false 表示弹窗被浏览器拦截 */
+export function exportReviewsToPdf(reviews: ExportReview[], title: string): boolean {
   const items = reviews.map(r => {
     const starsHtml = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
     const contentHtml = r.htmlContent
@@ -232,13 +246,9 @@ export function exportReviewsToPdf(reviews: ExportReview[], title: string) {
 <body>
   ${items}
   <div class="footer">由 微痕 导出 · 共 ${reviews.length} 条书评</div>
-  <script>document.title='${title}';window.onload=function(){window.print()};</script>
+  <script>document.title='${escapeJsString(title)}';window.onload=function(){window.print()};</script>
 </body>
 </html>`;
 
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(doc);
-    win.document.close();
-  }
+  return openPrintWindow(doc);
 }

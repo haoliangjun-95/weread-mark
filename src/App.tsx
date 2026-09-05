@@ -7,6 +7,7 @@ import NotesView from './pages/NotesView';
 import ReviewsView from './pages/ReviewsView';
 import SearchView from './pages/SearchView';
 import SettingsView from './pages/SettingsView';
+import Toaster from './components/Toast';
 import { getApiKey } from './services/weread';
 import type { BookItem } from './types/weread';
 
@@ -44,8 +45,11 @@ function App() {
     localStorage.setItem(VERSION_KEY, current);
   }, []);
   const [currentView, setCurrentView] = useState<ViewType>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ViewType | null;
+    // URL hash 优先于 localStorage，支持刷新/分享链接直达对应视图
+    const fromHash = location.hash.replace(/^#\/?/, '') as ViewType | null;
     if (!getApiKey()) return 'settings';
+    if (fromHash && VALID_VIEWS.includes(fromHash)) return fromHash;
+    const saved = localStorage.getItem(STORAGE_KEY) as ViewType | null;
     return saved && VALID_VIEWS.includes(saved) ? saved : 'dashboard';
   });
   const [theme, setTheme] = useState<ThemeType>(() => {
@@ -75,7 +79,23 @@ function App() {
   const [keyExpired, setKeyExpired] = useState(() => !getApiKey() && !!localStorage.getItem('weread-key-was-configured'));
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, currentView);
+    // 视图同步到 hash，浏览器前进/后退可在视图间导航
+    const target = `#/${currentView}`;
+    if (location.hash !== target) {
+      history.pushState(null, '', target);
+    }
   }, [currentView]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const fromHash = location.hash.replace(/^#\/?/, '') as ViewType | null;
+      if (fromHash && VALID_VIEWS.includes(fromHash)) {
+        setCurrentView(fromHash);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
@@ -170,6 +190,7 @@ function App() {
         })}
       </main>
       <Footer />
+      <Toaster />
     </div>
   );
 }

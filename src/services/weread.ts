@@ -68,6 +68,7 @@ function clearApiKey(): void {
   } catch {
     // Ignore storage cleanup failures; the request error still surfaces.
   }
+  clearNotebooksCache();
 }
 
 class MissingApiKeyError extends Error {
@@ -146,6 +147,43 @@ export async function fetchReadingStats(
 }
 
 // Notebooks API
+const NOTEBOOKS_CACHE_KEY = 'weread-notebooks-cache';
+const NOTEBOOKS_CACHE_TTL = 30 * 60 * 1000; // 30 分钟内直接用缓存，避免每次刷新全量重拉
+
+interface NotebooksCache {
+  savedAt: number;
+  data: NotebooksData;
+}
+
+function readNotebooksCache(maxAge: number): NotebooksData | null {
+  try {
+    const raw = localStorage.getItem(NOTEBOOKS_CACHE_KEY);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as NotebooksCache;
+    if (Date.now() - cache.savedAt > maxAge || !Array.isArray(cache.data?.books)) return null;
+    return cache.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeNotebooksCache(data: NotebooksData): void {
+  try {
+    const cache: NotebooksCache = { savedAt: Date.now(), data };
+    localStorage.setItem(NOTEBOOKS_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // 存储空间不足或受限环境时静默降级，不影响正常流程
+  }
+}
+
+function clearNotebooksCache(): void {
+  try {
+    localStorage.removeItem(NOTEBOOKS_CACHE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 async function fetchNotebooks(lastSort?: number): Promise<NotebooksData> {
   const params: ApiRequestParams = {
     api_name: '/user/notebooks',
@@ -160,6 +198,22 @@ async function fetchNotebooks(lastSort?: number): Promise<NotebooksData> {
 }
 
 export async function fetchAllNotebooks(retryOnError = true): Promise<NotebooksData> {
+  const fresh = readNotebooksCache(NOTEBOOKS_CACHE_TTL);
+  if (fresh) return fresh;
+
+  try {
+    const data = await fetchAllNotebooksRemote(retryOnError);
+    writeNotebooksCache(data);
+    return data;
+  } catch (err) {
+    // 请求失败时降级返回过期缓存（如果有），避免网络抖动导致整个页面不可用
+    const stale = readNotebooksCache(Number.MAX_SAFE_INTEGER);
+    if (stale) return stale;
+    throw err;
+  }
+}
+
+async function fetchAllNotebooksRemote(retryOnError = true): Promise<NotebooksData> {
   const allBooks: NotebooksData['books'] = [];
   let lastSort: number | undefined;
   let hasMore = 1;
