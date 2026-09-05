@@ -59,6 +59,14 @@ npm run tauri:build
 
 桌面版通过 `.env.tauri` 配置环境变量，直接请求微信读书 API，无需 Nginx 反向代理。
 
+#### 自动发布
+
+推送 `v*` 标签（如 `v1.0.1`）会触发 GitHub Actions 自动构建三平台安装包并发布到 Release：
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
 ## 构建部署
 
 ```bash
