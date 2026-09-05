@@ -619,6 +619,7 @@ body.font-zcool {
 }
 
 :where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-50:hover,
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-50\/50:hover,
 :where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-100:hover,
 :where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-gray-200:hover {
   background-color: var(--hover-bg);
@@ -745,6 +746,10 @@ body.font-zcool {
 
 :where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .border-purple-300 {
   border-color: var(--note-border);
+}
+
+:where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .hover\:bg-purple-100:hover {
+  background-color: color-mix(in srgb, var(--note-bg) 70%, var(--note-text));
 }
 
 :where(.theme-default, .theme-dark, .theme-eye, .theme-green, .theme-paper, .theme-mist, .theme-apricot, .theme-rose) .bg-green-50,

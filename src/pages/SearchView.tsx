@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews, getApiKey } from '../services/weread';
+import { useInfiniteScroll } from '../utils/filterUtils';
 import type { BookItem, NotebookItem } from '../types/weread';
 import copyText from '../assets/copy-text.png';
 import type { HighlightTarget } from '../App';
@@ -86,10 +87,12 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [failedBooks, setFailedBooks] = useState<string[]>([]);
+  const [displayCount, setDisplayCount] = useState(30);
   const [hasKey, setHasKey] = useState(() => !!getApiKey());
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const notebooksCacheRef = useRef<NotebookItem[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const lastSearchedRef = useRef<string>('');
 
   useEffect(() => {
     const onStorage = () => setHasKey(!!getApiKey());
@@ -116,6 +119,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
   const handleSearch = useCallback(async (query?: string) => {
     const kw = (query ?? keyword).trim();
     if (!kw) return;
+    lastSearchedRef.current = kw;
 
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -127,6 +131,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
     setResults([]);
     setProgress({ done: 0, total: 0 });
     setFailedBooks([]);
+    setDisplayCount(30);
 
     try {
       let books = notebooksCacheRef.current;
@@ -235,6 +240,21 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
     }
   }, [keyword]);
 
+  const hasMoreResults = displayCount < results.length;
+  const sentinelRef = useInfiniteScroll(hasMoreResults, () => setDisplayCount(c => c + 30), displayCount);
+  const visibleResults = results.slice(0, displayCount);
+
+  // 输入停顿后自动搜索，无需每次回车
+  useEffect(() => {
+    const kw = keyword.trim();
+    if (!kw || !hasKey || lastSearchedRef.current === kw) return;
+    const id = setTimeout(() => {
+      void handleSearch(kw);
+    }, 600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword]);
+
   const typeBadge = (type: SearchResultType) => {
     switch (type) {
       case 'highlight':
@@ -331,7 +351,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
             <p className="text-sm text-gray-500 mb-4">找到 {results.length} 条结果</p>
           )}
           <div className="space-y-4">
-            {results.map((result, idx) => (
+            {visibleResults.map((result, idx) => (
               <button
                 key={`note-${idx}`}
                 onClick={() => onSelectBook(result.book, { type: result.type, id: result.targetId, keyword })}
@@ -377,6 +397,11 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
               </button>
             ))}
           </div>
+          {hasMoreResults && !loading && (
+            <div ref={sentinelRef} className="text-center py-6 text-sm text-gray-400">
+              上拉加载更多（已显示 {visibleResults.length}/{results.length} 条）
+            </div>
+          )}
         </div>
       )}
     </div>
