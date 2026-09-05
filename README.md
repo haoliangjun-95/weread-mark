@@ -67,6 +67,8 @@ npm run build
 
 构建输出在 `dist/` 目录，资源使用相对路径（`base: './'`），可部署到任意目录。
 
+构建产物包含 PWA 支持（Service Worker 预缓存静态资源、运行时缓存书封图），手机浏览器可「添加到主屏幕」当 App 使用，二次访问可离线打开。
+
 ### Nginx 部署
 
 ```nginx
@@ -76,8 +78,29 @@ server {
     root /path/to/dist;
     index index.html;
 
+    # Service Worker 与 manifest 不能被缓存，否则新版本发布后用户端更新不生效
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+    }
+    location = /registerSW.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    # index.html 也不缓存，保证发版后入口文件是最新的
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
+        # 带内容哈希的静态资源可以长缓存
+        location ~* \.(js|css|png|svg|jpg|jpeg|woff2)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+        }
     }
 
     location /api/ {
