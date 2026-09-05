@@ -85,6 +85,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [failedBooks, setFailedBooks] = useState<string[]>([]);
   const [hasKey, setHasKey] = useState(() => !!getApiKey());
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const notebooksCacheRef = useRef<NotebookItem[] | null>(null);
@@ -125,6 +126,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
     setSearched(true);
     setResults([]);
     setProgress({ done: 0, total: 0 });
+    setFailedBooks([]);
 
     try {
       let books = notebooksCacheRef.current;
@@ -144,11 +146,16 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
       setProgress({ done: 0, total: booksWithContent.length });
 
       const collected: SearchResult[] = [];
+      const failed: string[] = [];
       const pushAndRender = (batch: SearchResult[]) => {
-        if (batch.length === 0 || ac.signal.aborted) return;
+        if (ac.signal.aborted) return;
         collected.push(...batch);
         collected.sort((a, b) => b.createTime - a.createTime);
         setResults([...collected]);
+      };
+      const renderFailed = () => {
+        if (ac.signal.aborted || failed.length === 0) return;
+        setFailedBooks([...failed]);
       };
 
       const CONCURRENCY = 10;
@@ -207,6 +214,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
               });
             } catch {
               if (ac.signal.aborted) return local;
+              failed.push(title);
             }
             return local;
           })
@@ -214,6 +222,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
         if (ac.signal.aborted) return;
         const flat = chunkResults.flat();
         pushAndRender(flat);
+        renderFailed();
         setProgress({ done: Math.min(i + CONCURRENCY, booksWithContent.length), total: booksWithContent.length });
       }
     } catch (e) {
@@ -298,6 +307,21 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
         <div className="text-center py-20">
           <span className="text-4xl mb-4 block">🔍</span>
           <p className="text-gray-500">未找到包含 "{keyword}" 的内容</p>
+        </div>
+      )}
+
+      {!loading && failedBooks.length > 0 && (
+        <div className="mb-4 px-4 py-2.5 rounded-xl text-sm flex items-start justify-between gap-3"
+          style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#b45309' }}>
+          <span>
+            有 {failedBooks.length} 本书加载失败{failedBooks.length <= 3 ? `（${failedBooks.join('、')}）` : ''}，结果可能不完整
+          </span>
+          <button
+            onClick={() => handleSearch()}
+            className="flex-shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            重新搜索
+          </button>
         </div>
       )}
 

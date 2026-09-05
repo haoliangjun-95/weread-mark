@@ -7,6 +7,7 @@ import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/fil
 import type { HighlightTarget } from '../App';
 import { exportItemToImage } from '../utils/exportImage';
 import { exportReviewToPdf } from '../utils/exportPdf';
+import { showToast } from '../utils/toast';
 import type { ExportStyleType } from '../App';
 import exportImg from '../assets/export-img.png';
 import exportPdf from '../assets/export-pdf.png';
@@ -169,7 +170,7 @@ ${highlightsHtml ? `<div class="section-title">📍 划线与想法</div>${highl
 ${thoughtsHtml ? `<div class="section-title">💭 未关联想法</div>${thoughtsHtml}` : ''}
 ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''}
 <div class="footer">由 微痕 导出 · 笔记成书</div>
-<script>document.title='${bookTitle}-笔记成书';window.onload=function(){window.print()};</script>
+<script>document.title='${bookTitle.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}-笔记成书';window.onload=function(){window.print()};</script>
 </body>
 </html>`;
 
@@ -183,6 +184,10 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
       };
       iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
       setTimeout(cleanup, 600000);
+      showToast('已生成，正在打开打印窗口', 'success');
+    } catch (err) {
+      console.error('笔记成书失败：', err);
+      showToast(`笔记成书失败：${err instanceof Error ? err.message : '请重试'}`, 'error');
     } finally {
       setExportingBookIds(prev => {
         const next = new Set(prev);
@@ -344,26 +349,31 @@ function BookNotesDetail({ book, onBack, highlightTarget, exportStyle, backLabel
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [chapters, setChapters] = useState<ChapterItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [exportingBook, setExportingBook] = useState(false);
 
-  useEffect(() => {
-    const loadDetails = async () => {
-      try {
-        const [bmData, rvData] = await Promise.all([
-          fetchBookmarks(book.bookId),
-          fetchBookReviews(book.bookId),
-        ]);
-        setBookmarks(bmData.updated || []);
-        setChapters(bmData.chapters || []);
-        setReviews(rvData.reviews || []);
-      } catch (err) {
-        console.error('加载书籍详情失败：', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadDetails();
+  const loadDetails = useCallback(async () => {
+    try {
+      setLoading(true);
+      setDetailError(null);
+      const [bmData, rvData] = await Promise.all([
+        fetchBookmarks(book.bookId),
+        fetchBookReviews(book.bookId),
+      ]);
+      setBookmarks(bmData.updated || []);
+      setChapters(bmData.chapters || []);
+      setReviews(rvData.reviews || []);
+    } catch (err) {
+      console.error('加载书籍详情失败：', err);
+      setDetailError(err instanceof Error ? err.message : '加载笔记详情失败');
+    } finally {
+      setLoading(false);
+    }
   }, [book.bookId]);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadDetails);
+  }, [loadDetails]);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleString('zh-CN', {
@@ -632,7 +642,7 @@ ${highlightsHtml ? `<div class="section-title">📍 划线与想法</div>${highl
 ${thoughtsHtml ? `<div class="section-title">💭 未关联想法</div>${thoughtsHtml}` : ''}
 ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''}
 <div class="footer">由 微痕 导出 · 笔记成书</div>
-<script>document.title='${book.title}-笔记成书';window.onload=function(){window.print()};</script>
+<script>document.title='${book.title.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}-笔记成书';window.onload=function(){window.print()};</script>
 </body>
 </html>`;
 
@@ -649,6 +659,10 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
       };
       iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
       setTimeout(cleanup, 600000);
+      showToast('已生成，正在打开打印窗口', 'success');
+    } catch (err) {
+      console.error('笔记成书失败：', err);
+      showToast(`笔记成书失败：${err instanceof Error ? err.message : '请重试'}`, 'error');
     } finally {
       setExportingBook(false);
     }
@@ -693,6 +707,16 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 
       {loading ? (
         <div className="text-center py-10 text-gray-500">加载笔记中...</div>
+      ) : detailError ? (
+        <div className="text-center py-10">
+          <p className="text-red-500 mb-4">{detailError}</p>
+          <button
+            onClick={() => void loadDetails()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            重试
+          </button>
+        </div>
       ) : (
         <NotesContent
           book={book}
@@ -991,6 +1015,10 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                           thoughts: thoughtEntries.length > 0 ? thoughtEntries : undefined,
                           style: exportStyle,
                         });
+                        showToast('图片已导出', 'success');
+                      } catch (err) {
+                        console.error('导出图片失败：', err);
+                        showToast('导出图片失败，请重试', 'error');
                       } finally {
                         setExportingId(null);
                       }
@@ -1051,6 +1079,10 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                           style: exportStyle,
                         });
                       }
+                      showToast(`已导出 ${sortedBookReviews.length} 张图片`, 'success');
+                    } catch (err) {
+                      console.error('导出图片失败：', err);
+                      showToast('导出图片失败，请重试', 'error');
                     } finally {
                       setExportingReviewId(null);
                     }
@@ -1061,16 +1093,19 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                   title={exportingReviewId === '_all_' ? '生成中...' : '导出图片'}
                 >{exportingReviewId === '_all_' ? '⏳' : <span className="w-4 h-4 block" style={{ backgroundImage: `url(${exportImg})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />}</button>
                 <button
-                  onClick={() => exportReviewToPdf({
-                    bookTitle: book.title || '',
-                    bookAuthor: book.author || '',
-                    bookCover: book.cover,
-                    stars: Math.max(0, Math.min(5, Math.round((sortedBookReviews[0]?.review.star ?? 0) / 20))),
-                    createTime: formatDate(sortedBookReviews[0]?.review.createTime || 0),
-                    likesCount: sortedBookReviews[0]?.likesCount,
-                    htmlContent: sortedBookReviews.map(rv => rv.review.htmlContent).filter(Boolean).join('<hr>'),
-                    textContent: sortedBookReviews.map(rv => rv.review.content).filter(Boolean).join(' | '),
-                  })}
+                  onClick={() => {
+                    const ok = exportReviewToPdf({
+                      bookTitle: book.title || '',
+                      bookAuthor: book.author || '',
+                      bookCover: book.cover,
+                      stars: Math.max(0, Math.min(5, Math.round((sortedBookReviews[0]?.review.star ?? 0) / 20))),
+                      createTime: formatDate(sortedBookReviews[0]?.review.createTime || 0),
+                      likesCount: sortedBookReviews[0]?.likesCount,
+                      htmlContent: sortedBookReviews.map(rv => rv.review.htmlContent).filter(Boolean).join('<hr>'),
+                      textContent: sortedBookReviews.map(rv => rv.review.content).filter(Boolean).join(' | '),
+                    });
+                    if (!ok) showToast('弹窗被浏览器拦截，请允许弹窗后重试', 'error');
+                  }}
                   className="w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all hover:scale-110"
                   style={{ color: 'var(--text-muted)', backgroundColor: 'var(--bg-tertiary)' }}
                   title="导出PDF"
