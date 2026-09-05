@@ -3,6 +3,7 @@ import type { BookItem } from '../types/weread';
 import { fetchShelf, fetchAllNotebooks, fetchBookReviews } from '../services/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
+import { SkeletonGrid } from '../components/Skeleton';
 import type { HighlightTarget } from '../App';
 
 interface ShelfViewProps {
@@ -203,7 +204,7 @@ function ShelfTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?: Hi
     return () => { cancelled = true; };
   }, [visible, thoughtCountMap, bookReviewMap]);
 
-  if (loading) return <div className="text-center py-20 text-gray-500">加载书架中...</div>;
+  if (loading) return <SkeletonGrid count={8} />;
   if (error) return (
     <div className="text-center py-20">
       <p className="text-red-500 mb-4">{error}</p>
@@ -317,7 +318,7 @@ function FinishedTab({ onSelectBook }: { onSelectBook: (book: BookItem, target?:
     return () => { cancelled = true; };
   }, [visibleBooks, thoughtCountMap, bookReviewMap]);
 
-  if (loading) return <div className="text-center py-20 text-gray-500">加载已读完书架中...</div>;
+  if (loading) return <SkeletonGrid count={8} />;
   if (error) return (
     <div className="text-center py-20">
       <p className="text-red-500 mb-4">{error}</p>

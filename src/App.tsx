@@ -34,16 +34,16 @@ const VALID_FONTS: FontType[] = ['sans', 'serif', 'wenkai', 'yousong', 'laosong'
 const VERSION_KEY = 'weread-app-version';
 
 function App() {
-  // 版本更新检测：新构建自动强刷，避免缓存旧资源
-  useEffect(() => {
-    const current = __APP_VERSION__;
+  // 版本更新检测：检测到新版本时提示用户手动刷新，避免打断进行中的操作
+  const [updateAvailable, setUpdateAvailable] = useState(() => {
     const stored = localStorage.getItem(VERSION_KEY);
-    if (stored && stored !== current) {
-      window.location.reload();
-      return;
+    return !!stored && stored !== __APP_VERSION__;
+  });
+  useEffect(() => {
+    if (!updateAvailable) {
+      localStorage.setItem(VERSION_KEY, __APP_VERSION__);
     }
-    localStorage.setItem(VERSION_KEY, current);
-  }, []);
+  }, [updateAvailable]);
   const [currentView, setCurrentView] = useState<ViewType>(() => {
     // URL hash 优先于 localStorage，支持刷新/分享链接直达对应视图
     const fromHash = location.hash.replace(/^#\/?/, '') as ViewType | null;
@@ -191,6 +191,27 @@ function App() {
       </main>
       <Footer />
       <Toaster />
+      {updateAvailable && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[99999] px-4 py-3 rounded-xl shadow-lg border flex items-center gap-3 text-sm"
+          style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>
+          <span>发现新版本</span>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-3 py-1 rounded-lg text-white font-medium"
+            style={{ backgroundColor: 'var(--accent-color)' }}
+          >
+            刷新页面
+          </button>
+          <button
+            onClick={() => setUpdateAvailable(false)}
+            className="text-xs"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label="关闭更新提示"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

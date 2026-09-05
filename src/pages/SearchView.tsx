@@ -352,10 +352,18 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
           )}
           <div className="space-y-4">
             {visibleResults.map((result, idx) => (
-              <button
+              <div
                 key={`note-${idx}`}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectBook(result.book, { type: result.type, id: result.targetId, keyword })}
-                className="w-full text-left bg-white border border-gray-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:-translate-y-0.5 transition-all"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectBook(result.book, { type: result.type, id: result.targetId, keyword });
+                  }
+                }}
+                className="w-full text-left bg-white border border-gray-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="min-w-0 flex-1">
@@ -394,7 +402,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
                     </>
                   )}
                 </div>
-              </button>
+              </div>
             ))}
           </div>
           {hasMoreResults && !loading && (

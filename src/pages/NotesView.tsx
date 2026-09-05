@@ -4,6 +4,7 @@ import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews } from '../services
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
+import { SkeletonGrid } from '../components/Skeleton';
 import type { HighlightTarget } from '../App';
 import { exportItemToImage } from '../utils/exportImage';
 import { exportReviewToPdf } from '../utils/exportPdf';
@@ -221,7 +222,7 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
   const sentinelRef = useInfiniteScroll(hasMore, () => setDisplayCount(c => c + 30), displayCount);
 
   if (loading) {
-    return <div className="text-center py-20 text-gray-500">加载笔记中...</div>;
+    return <SkeletonGrid count={8} />;
   }
 
   if (error) {
