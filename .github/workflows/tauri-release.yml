@@ -1,10 +1,16 @@
 name: Tauri Release
 
-# 推送 v* 标签时触发，三平台并行构建，产物自动挂到 GitHub Release
+# 推送 v* 标签时触发，或在 Actions 页面手动触发；三平台并行构建，产物自动挂到 GitHub Release
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '发布版本号（如 v1.0.2，留空则读取 package.json 的 version）'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -26,6 +32,18 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      # 解析发布版本号：手动填写的 > 推送的标签 > package.json 的 version
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Rust (with cross target)
         uses: dtolnay/rust-toolchain@stable
@@ -57,8 +75,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: '微痕 ${{ github.ref_name }}'
+          tagName: ${{ steps.tag.outputs.tag }}
+          releaseName: '微痕 ${{ steps.tag.outputs.tag }}'
           releaseBody: '请在 Assets 中下载对应平台的安装包：macOS (.dmg) / Windows (.msi/.exe) / Linux (.deb/.AppImage)'
           releaseDraft: false
           prerelease: false
