@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { fetchAllNotebooks, fetchBookmarks, fetchAllBookReviews, getApiKey } from '../services/weread';
 import { searchLocal, isSynced, isTauri } from '../services/dataService';
+import { sanitizeRichText } from '../utils/sanitize';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import type { BookItem, NotebookItem } from '../types/weread';
 import copyText from '../assets/copy-text.png';
@@ -242,8 +243,9 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
 
               allReviews.forEach((rv) => {
                 if (rv.review.content?.toLowerCase().includes(lowerKw)) {
+                  // API 返回的富文本必须先净化再注入高亮，防止可执行脚本
                   const htmlHighlight = rv.review.htmlContent
-                    ? highlightKeywordInHtml(rv.review.htmlContent, kw)
+                    ? highlightKeywordInHtml(sanitizeRichText(rv.review.htmlContent), kw)
                     : undefined;
                   local.push({
                     bookId,

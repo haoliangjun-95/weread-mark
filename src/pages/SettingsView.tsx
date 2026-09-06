@@ -3,7 +3,7 @@ import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
-import { syncAll, getLastSyncAt, getLocalStats, isTauri } from '../services/localDb';
+import { syncAll, getLocalStats, getSyncStatus, isTauri } from '../services/localDb';
 import type { SyncProgress, LocalStats } from '../services/localDb';
 import { markSynced } from '../services/dataService';
 import { showToast } from '../utils/toast';
@@ -88,11 +88,13 @@ function SyncCard() {
   const [syncing, setSyncing] = useState(false);
   const [progress, setProgress] = useState<SyncProgress | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [missingCount, setMissingCount] = useState(0);
   const [stats, setStats] = useState<LocalStats | null>(null);
 
   const refreshStatus = useCallback(async () => {
-    const [t, s] = await Promise.all([getLastSyncAt(), getLocalStats()]);
-    setLastSyncAt(t);
+    const [status, s] = await Promise.all([getSyncStatus(), getLocalStats()]);
+    setLastSyncAt(status.lastSyncAt);
+    setMissingCount(status.missingCount);
     setStats(s);
   }, []);
 
@@ -145,6 +147,11 @@ function SyncCard() {
             {lastSyncAt && (
               <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
                 上次同步：{new Date(lastSyncAt * 1000).toLocaleString('zh-CN')}
+              </p>
+            )}
+            {lastSyncAt && missingCount > 0 && (
+              <p className="mt-1 font-medium" style={{ color: 'var(--warning-text)' }}>
+                ⚠ 上次同步不完整（缺 {missingCount} 本书），当前读取已回退在线模式，建议重新同步
               </p>
             )}
           </div>

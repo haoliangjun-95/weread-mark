@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Dashboard from './pages/Dashboard';
@@ -11,6 +11,7 @@ import SettingsView from './pages/SettingsView';
 import Toaster from './components/Toast';
 import { getApiKey } from './services/weread';
 import { isTauri } from './services/localDb';
+import { handleApiKeyChanged } from './services/dataService';
 import type { BookItem } from './types/weread';
 
  export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'settings';
@@ -71,6 +72,8 @@ function App() {
      const saved = localStorage.getItem(FONT_SIZE_KEY);
      if (!saved) return 'auto';
      if (saved === 'auto') return 'auto';
+     // 预设（sm/md/lg/xl）与自定义数字（10-20px）两种形态都要能恢复
+     if (saved in FONT_SIZE_PRESETS) return saved as keyof typeof FONT_SIZE_PRESETS;
      const n = parseInt(saved, 10);
      return n >= 10 && n <= 20 ? n : 'auto';
    });
@@ -130,8 +133,17 @@ function App() {
    }, [exportStyle]);
 
   const [hasKey, setHasKey] = useState(() => !!getApiKey());
+  // Key 值变化时递增，作为视图容器的 key 强制全部视图重挂载，避免残留上一个账号的内存态
+  const lastKeyRef = useRef(getApiKey());
+  const [keyEpoch, setKeyEpoch] = useState(0);
   const syncApiKeyState = useCallback(() => {
-    const nextHasKey = !!getApiKey();
+    const currentKey = getApiKey();
+    if (currentKey !== lastKeyRef.current) {
+      lastKeyRef.current = currentKey;
+      setKeyEpoch(e => e + 1);
+      handleApiKeyChanged();
+    }
+    const nextHasKey = !!currentKey;
     setHasKey(nextHasKey);
     if (nextHasKey) {
       setKeyExpired(false);
@@ -192,7 +204,7 @@ function App() {
           // 导致 Key 配置后切到这些 tab 仍显示陈旧报错。
           if (key !== 'settings' && !hasKey) return null;
           return (
-            <div key={key} style={{ display: currentView === key ? 'block' : 'none' }}>
+            <div key={`${key}:${keyEpoch}`} style={{ display: currentView === key ? 'block' : 'none' }}>
               {element}
             </div>
           );

@@ -5,6 +5,7 @@ import { getTopReviews, isTauri } from '../services/dataService';
 import { hasLocalData, getLastSyncAt } from '../services/localDb';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import { SkeletonGrid } from '../components/Skeleton';
+import { richTextToPlain } from '../utils/sanitize';
 import type { HighlightTarget } from '../App';
 
 interface RankViewProps {
@@ -16,9 +17,8 @@ type RankTab = 'all' | 'thought' | 'review';
 const PAGE_SIZE = 30;
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.innerText || tmp.textContent || '';
+  // DOMParser 文档不加载子资源，避免 innerHTML 触发 img onerror 等副作用
+  return richTextToPlain(html);
 }
 
 function formatDate(timestamp: number): string {

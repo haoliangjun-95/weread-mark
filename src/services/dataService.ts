@@ -1,12 +1,12 @@
 import {
   fetchAllNotebooks,
   fetchBookmarks,
-  fetchBookReviews,
   fetchAllBookReviews,
 } from './weread';
 import {
   isTauri,
   hasLocalData,
+  resetLocalDb,
   queryNotebooks,
   queryShelfBooks,
   queryBookDetail,
@@ -37,9 +37,23 @@ function localReady(): Promise<boolean> {
   return localReadyPromise;
 }
 
-/** 供同步完成后切换到本地读路径（SettingsView 同步成功时调用） */
+/** 供同步完成后切换到本地读路径（SettingsView 同步成功时调用）；重新评估完整性，部分失败则保持在线回退 */
 export function markSynced(): void {
-  localReadyPromise = Promise.resolve(true);
+  localReadyPromise = hasLocalData().catch(() => false);
+}
+
+/** API Key 变更时调用：清空本地库与会话缓存，读路径回到在线模式，避免读到上一个账号的数据 */
+export function handleApiKeyChanged(): void {
+  if (isTauri) {
+    void resetLocalDb().catch(err => console.warn('[dataService] 清空本地库失败：', err));
+  }
+  localReadyPromise = null;
+  try {
+    // sessionStorage 目前只有书评墙/排行榜的会话缓存，直接清空
+    sessionStorage.clear();
+  } catch {
+    // ignore
+  }
 }
 
 /** 笔记书列表：本地优先，否则在线（含 30 分钟 localStorage 缓存） */
@@ -76,14 +90,14 @@ export async function getBookDetail(bookId: string): Promise<BookDetailResult | 
       console.warn('[dataService] 本地读取失败，回退在线：', err);
     }
   }
-  const [bmData, rvData] = await Promise.all([
+  const [bmData, allReviews] = await Promise.all([
     fetchBookmarks(bookId),
-    fetchBookReviews(bookId),
+    fetchAllBookReviews(bookId),
   ]);
   return {
     bookmarks: bmData.updated || [],
     chapters: bmData.chapters || [],
-    reviews: rvData.reviews || [],
+    reviews: allReviews,
   };
 }
 

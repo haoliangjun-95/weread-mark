@@ -1,3 +1,5 @@
+import { sanitizeRichText } from './sanitize';
+
 interface ExportReview {
   bookTitle: string;
   bookAuthor: string;
@@ -10,13 +12,7 @@ interface ExportReview {
 }
 
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript:/gi, '');
+  return sanitizeRichText(html);
 }
 
 

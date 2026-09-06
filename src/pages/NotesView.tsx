@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/weread';
-import { fetchBookmarks, fetchBookReviews } from '../services/weread';
+import { fetchBookmarks, fetchAllBookReviews } from '../services/weread';
 import { getNotebooks, getBookDetail } from '../services/dataService';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
@@ -10,6 +10,7 @@ import type { HighlightTarget } from '../App';
 import { exportItemToImage } from '../utils/exportImage';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { showToast } from '../utils/toast';
+import { sanitizeRichText, richTextToPlain } from '../utils/sanitize';
 import type { ExportStyleType } from '../App';
 import exportImg from '../assets/export-img.png';
 import exportPdf from '../assets/export-pdf.png';
@@ -63,13 +64,13 @@ export default function NotesView(props: NotesViewProps) {
     if (exportingBookIds.has(bookId)) return;
     setExportingBookIds(prev => new Set(prev).add(bookId));
     try {
-      const [bmData, rvData] = await Promise.all([
+      const [bmData, allReviews] = await Promise.all([
         fetchBookmarks(bookId),
-        fetchBookReviews(bookId),
+        fetchAllBookReviews(bookId),
       ]);
       const bookmarks = bmData.updated || [];
       const chapters = bmData.chapters || [];
-      const reviews: ReviewItem[] = rvData.reviews || [];
+      const reviews: ReviewItem[] = allReviews;
 
       const bookReviews = reviews.filter(r => r.review.type === 4);
       const nonReviewThoughts = reviews.filter(r => r.review.type !== 4);
@@ -137,7 +138,7 @@ ${rv.review.chapterName ? `<div class="chapter">${rv.review.chapterName}</div>` 
       sortedReviews.forEach((rv, idx) => {
         const stars = Math.max(0, Math.min(5, Math.round((rv.review.star ?? 0) / 20)));
         const content = rv.review.htmlContent
-          ? rv.review.htmlContent.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*"[^"]*"/gi, '').replace(/javascript:/gi, '')
+          ? sanitizeRichText(rv.review.htmlContent)
           : (rv.review.content || '');
         reviewsHtml += `<div class="item">
 <div class="label">书评 ${idx + 1}</div>
@@ -478,10 +479,7 @@ ${rv.review.chapterName ? `<div class="chapter">${rv.review.chapterName}</div>` 
       sortedReviews.forEach((rv, idx) => {
         const stars = Math.max(0, Math.min(5, Math.round((rv.review.star ?? 0) / 20)));
         const content = rv.review.htmlContent
-          ? rv.review.htmlContent
-              .replace(/<script[\s\S]*?<\/script>/gi, '')
-              .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-              .replace(/javascript:/gi, '')
+          ? sanitizeRichText(rv.review.htmlContent)
           : (rv.review.content || '');
         reviewsHtml += `<div class="item">
 <div class="label">书评 ${idx + 1}</div>
@@ -745,19 +743,12 @@ interface NotesContentProps {
 }
 
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript:/gi, '');
+  return sanitizeRichText(html);
 }
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.innerText || tmp.textContent || '';
+  // DOMParser 文档不加载子资源，避免 innerHTML 触发 img onerror 等副作用
+  return richTextToPlain(html);
 }
 
 async function copyToClipboard(text: string) {

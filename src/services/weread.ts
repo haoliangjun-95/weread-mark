@@ -29,6 +29,8 @@ export function setApiKey(key: string): void {
     } else {
       localStorage.removeItem(API_KEY_STORAGE);
     }
+    // Key 变更后旧账号的笔记列表缓存立即失效
+    clearNotebooksCache();
   } catch {
     // localStorage writes can fail in restricted browser contexts.
   }

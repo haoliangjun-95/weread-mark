@@ -18,7 +18,7 @@ import type {
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 const DB_URL = 'sqlite:weread.db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let dbPromise: Promise<Database> | null = null;
 
@@ -63,9 +63,16 @@ async function migrate(db: Database): Promise<void> {
       bookmarkCount INTEGER NOT NULL DEFAULT 0,
       readingProgress REAL NOT NULL DEFAULT 0,
       sort INTEGER NOT NULL DEFAULT 0,
-      updatedAt INTEGER NOT NULL DEFAULT 0
+      updatedAt INTEGER NOT NULL DEFAULT 0,
+      syncedAt INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // v1 库升级：补 syncedAt 列（v2 新增，用于逐书记录同步完整性）
+  try {
+    await db.execute('ALTER TABLE books ADD COLUMN syncedAt INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // 列已存在（新建库的 CREATE 已包含）
+  }
   await db.execute(`
     CREATE TABLE IF NOT EXISTS bookmarks (
       bookmarkId TEXT PRIMARY KEY,
@@ -211,6 +218,10 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<n
       fetchAllBookReviews(bookId),
     ]);
     await syncBookContents(db, bookId, bmData.updated || [], bmData.chapters || [], allReviews);
+    // 逐书记录同步完成时间；失败的书保持 0，hasLocalData 据此判断库完整性
+    await db.execute('UPDATE books SET syncedAt = ? WHERE bookId = ?', [
+      Math.floor(Date.now() / 1000), bookId,
+    ]);
   };
 
   for (let i = 0; i < targets.length; i += SYNC_CONCURRENCY) {
@@ -338,10 +349,45 @@ export async function hasLocalData(): Promise<boolean> {
     const rows = await db.select<{ value: string }[]>(
       'SELECT value FROM sync_meta WHERE key = ?', ['lastSyncAt'],
     );
-    return rows.length > 0;
+    if (rows.length === 0) return false;
+    // 同步不完整（有笔记的书未全部同步成功）时不视为可用本地库，读路径回退在线
+    const missing = await db.select<{ c: number }[]>(
+      'SELECT COUNT(*) as c FROM books WHERE (noteCount > 0 OR reviewCount > 0) AND syncedAt = 0',
+    );
+    return (missing[0]?.c || 0) === 0;
   } catch {
     return false;
   }
+}
+
+/** 同步状态：上次同步时间与未同步完成的笔记书数量（用于设置页提示） */
+export async function getSyncStatus(): Promise<{ lastSyncAt: number | null; missingCount: number }> {
+  if (!isTauri) return { lastSyncAt: null, missingCount: 0 };
+  try {
+    const db = await getDb();
+    const [rows, missing] = await Promise.all([
+      db.select<{ value: string }[]>("SELECT value FROM sync_meta WHERE key = 'lastSyncAt'"),
+      db.select<{ c: number }[]>(
+        'SELECT COUNT(*) as c FROM books WHERE (noteCount > 0 OR reviewCount > 0) AND syncedAt = 0'),
+    ]);
+    return {
+      lastSyncAt: rows.length > 0 ? parseInt(rows[0].value, 10) : null,
+      missingCount: missing[0]?.c || 0,
+    };
+  } catch {
+    return { lastSyncAt: null, missingCount: 0 };
+  }
+}
+
+/** 清空本地库全部数据（切换 API Key 时调用，避免读到上一个账号的数据） */
+export async function resetLocalDb(): Promise<void> {
+  const db = await getDb();
+  await db.execute('DELETE FROM books');
+  await db.execute('DELETE FROM bookmarks');
+  await db.execute('DELETE FROM chapters');
+  await db.execute('DELETE FROM reviews');
+  await db.execute('DELETE FROM stats_snapshots');
+  await db.execute("DELETE FROM sync_meta WHERE key = 'lastSyncAt'");
 }
 
 export async function getLastSyncAt(): Promise<number | null> {

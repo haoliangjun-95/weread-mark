@@ -128,14 +128,17 @@ export default function Dashboard({ hasKey }: DashboardProps) {
          if (match) finishedFromStat = parseInt(match[0], 10);
        }
 
-       // overall 模式：与「书架 → 已读完」完全一致，使用 notebooks 中 markedStatus === 4 且有 book 的数量
-       // 其它周期（weekly/monthly/annually）：使用 readStat 中「读完」的周期统计值
+       // overall 模式：与「书架 → 已读完」完全一致，使用 notebooks 中 markedStatus === 4 且有 book 的数量；
+       // 传参带 selectedYear 的年份模式同样是周期口径，用 readStat 的周期值。
+       // 周期值缺失时才回退书架累计数，且绝不与累计值取 max（会把周期 1 本显示成累计 8 本）
        let finalFinished: number;
        if (timeMode === 'overall' && notebooksData) {
          finalFinished = (notebooksData.books || [])
            .filter(item => item.markedStatus === 4 && item.book).length;
+       } else if (finishedFromStat > 0) {
+         finalFinished = finishedFromStat;
        } else {
-         finalFinished = Math.max(shelfFinished, finishedFromStat);
+         finalFinished = shelfFinished;
        }
 
        setFinishedCount(finalFinished);

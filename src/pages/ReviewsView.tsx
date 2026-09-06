@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react
 import type { BookItem, ReviewItem } from '../types/weread';
 import { fetchAllNotebooks, fetchAllBookReviews } from '../services/weread';
 import { useInfiniteScroll } from '../utils/filterUtils';
+import { richTextToPlain, sanitizeRichText } from '../utils/sanitize';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { exportItemToImage } from '../utils/exportImage';
 import { showToast } from '../utils/toast';
@@ -32,13 +33,7 @@ function formatDate(timestamp: number): string {
 }
 
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript:/gi, '');
+  return sanitizeRichText(html);
 }
 
 export default function ReviewsView() {
@@ -229,9 +224,8 @@ export default function ReviewsView() {
 }
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.innerText || tmp.textContent || '';
+  // DOMParser 文档不加载子资源，避免 innerHTML 触发 img onerror 等副作用
+  return richTextToPlain(html);
 }
 
 const COLLAPSED_MAX_HEIGHT = 180;
