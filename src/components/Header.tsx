@@ -1,4 +1,5 @@
 import type { ViewType } from '../App';
+import { isTauri } from '../services/localDb';
 import logo from '../assets/logo.png';
 
 interface HeaderProps {
@@ -7,7 +8,7 @@ interface HeaderProps {
     hasKey: boolean;
 }
 
-const navItems: { key: ViewType; label: string; icon: string }[] = [
+const allNavItems: { key: ViewType; label: string; icon: string }[] = [
     { key: 'home', label: '搜索', icon: '🔍' },
     { key: 'shelf', label: '书架', icon: '📚' },
     { key: 'reviews', label: '书评墙', icon: '⭐' },
@@ -16,6 +17,9 @@ const navItems: { key: ViewType; label: string; icon: string }[] = [
     { key: 'notes', label: '笔记', icon: '📝' },
     { key: 'settings', label: '设置', icon: '⚙️' },
 ];
+
+// 排行榜依赖本地 SQLite 数据，仅在桌面版展示
+const navItems = isTauri ? allNavItems : allNavItems.filter(item => item.key !== 'rank');
 
 export default function Header({ currentView, onNavigate, hasKey }: HeaderProps) {
     return (

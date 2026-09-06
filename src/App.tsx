@@ -10,6 +10,7 @@ import SearchView from './pages/SearchView';
 import SettingsView from './pages/SettingsView';
 import Toaster from './components/Toast';
 import { getApiKey } from './services/weread';
+import { isTauri } from './services/localDb';
 import type { BookItem } from './types/weread';
 
  export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'settings';
@@ -34,6 +35,11 @@ const VALID_THEMES: ThemeType[] = ['default', 'dark', 'eye', 'green', 'paper', '
 const VALID_FONTS: FontType[] = ['sans', 'serif', 'wenkai', 'yousong', 'laosong', 'notosans', 'mashan', 'zcool'];
 const VERSION_KEY = 'weread-app-version';
 
+/** 排行榜依赖本地 SQLite，Web 版不识别该视图（hash 直达时回退看板） */
+function isDesktopView(view: ViewType): boolean {
+  return VALID_VIEWS.includes(view) && (view !== 'rank' || isTauri);
+}
+
 function App() {
   // 版本更新检测：检测到新版本时提示用户手动刷新，避免打断进行中的操作
   const [updateAvailable, setUpdateAvailable] = useState(() => {
@@ -49,9 +55,9 @@ function App() {
     // URL hash 优先于 localStorage，支持刷新/分享链接直达对应视图
     const fromHash = location.hash.replace(/^#\/?/, '') as ViewType | null;
     if (!getApiKey()) return 'settings';
-    if (fromHash && VALID_VIEWS.includes(fromHash)) return fromHash;
+    if (fromHash && isDesktopView(fromHash)) return fromHash;
     const saved = localStorage.getItem(STORAGE_KEY) as ViewType | null;
-    return saved && VALID_VIEWS.includes(saved) ? saved : 'dashboard';
+    return saved && isDesktopView(saved) ? saved : 'dashboard';
   });
   const [theme, setTheme] = useState<ThemeType>(() => {
     const saved = localStorage.getItem(THEME_KEY) as ThemeType | null;
@@ -90,7 +96,7 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const fromHash = location.hash.replace(/^#\/?/, '') as ViewType | null;
-      if (fromHash && VALID_VIEWS.includes(fromHash)) {
+      if (fromHash && isDesktopView(fromHash)) {
         setCurrentView(fromHash);
       }
     };
@@ -171,7 +177,8 @@ function App() {
     { key: 'shelf' as ViewType, element: <ShelfView onSelectBook={handleSelectBook} /> },
     { key: 'notes' as ViewType, element: <NotesView selectedBook={selectedBook} onBack={() => { setSelectedBook(null); setNotesBackLabel('返回笔记列表'); if (notesSource) { setCurrentView(notesSource); setNotesSource(null); } }} onSelectBook={handleSelectBook} highlightTarget={highlightTarget} exportStyle={exportStyle} backLabel={notesBackLabel} /> },
     { key: 'reviews' as ViewType, element: <ReviewsView /> },
-    { key: 'rank' as ViewType, element: <RankView onSelectBook={handleSelectBook} /> },
+    // Web 版不挂载排行榜（依赖本地库，挂载即会发起在线全量扫描）
+    ...(isTauri ? [{ key: 'rank' as ViewType, element: <RankView onSelectBook={handleSelectBook} /> }] : []),
     { key: 'settings' as ViewType, element: <SettingsView theme={theme} onThemeChange={setTheme} font={font} onFontChange={setFont} fontSize={fontSize} onFontSizeChange={setFontSize} keyExpired={keyExpired} exportStyle={exportStyle} onExportStyleChange={setExportStyle} onNavigate={handleNavigate} onApiKeyChange={syncApiKeyState} /> },
   ];
 
