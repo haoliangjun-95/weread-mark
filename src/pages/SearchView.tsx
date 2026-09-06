@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews, getApiKey } from '../services/weread';
+import { fetchAllNotebooks, fetchBookmarks, fetchAllBookReviews, getApiKey } from '../services/weread';
 import { searchLocal, isSynced, isTauri } from '../services/dataService';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import type { BookItem, NotebookItem } from '../types/weread';
@@ -218,9 +218,9 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
             const local: SearchResult[] = [];
 
             try {
-              const [bmData, rvData] = await Promise.all([
+              const [bmData, allReviews] = await Promise.all([
                 fetchBookmarks(bookId, ac.signal),
-                fetchBookReviews(bookId, 0, ac.signal),
+                fetchAllBookReviews(bookId, ac.signal),
               ]);
 
               (bmData.updated || []).forEach((bm) => {
@@ -240,7 +240,7 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
                 }
               });
 
-              (rvData.reviews || []).forEach((rv) => {
+              allReviews.forEach((rv) => {
                 if (rv.review.content?.toLowerCase().includes(lowerKw)) {
                   const htmlHighlight = rv.review.htmlContent
                     ? highlightKeywordInHtml(rv.review.htmlContent, kw)

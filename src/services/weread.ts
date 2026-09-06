@@ -5,6 +5,7 @@ import type {
   NotebooksData,
   BookmarkListData,
   ReviewsData,
+  ReviewItem,
 } from '../types/weread';
 
 const API_URL = import.meta.env.VITE_WEREAD_API_URL || '/api/agent/gateway';
@@ -286,4 +287,21 @@ export async function fetchBookReviews(bookId: string, synckey = 0, signal?: Abo
     synckey,
     count: 20,
   }, signal);
+}
+
+/** 拉全单本书的想法+书评：接口每页 20 条，按返回的 synckey 翻页直到 hasMore 为 0 */
+export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal): Promise<ReviewItem[]> {
+  const all: ReviewItem[] = [];
+  let synckey = 0;
+  const MAX_PAGES = 100; // 防御上限：单本书最多 2000 条
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const data = await fetchBookReviews(bookId, synckey, signal);
+    const reviews = data.reviews || [];
+    if (reviews.length === 0) break;
+    all.push(...reviews);
+    if (!data.hasMore) break;
+    if (data.synckey === synckey) break; // synckey 不再前进，防死循环
+    synckey = data.synckey;
+  }
+  return all;
 }

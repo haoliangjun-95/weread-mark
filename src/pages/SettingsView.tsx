@@ -109,9 +109,13 @@ function SyncCard() {
     setSyncing(true);
     setProgress({ done: 0, total: 0, phase: 'books' });
     try {
-      await syncAll(p => setProgress(p));
+      const failedCount = await syncAll(p => setProgress(p));
       markSynced();
-      showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
+      if (failedCount > 0) {
+        showToast(`同步完成，但有 ${failedCount} 本书失败（可稍后重新同步补齐）`, 'error');
+      } else {
+        showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
+      }
       await refreshStatus();
     } catch (err) {
       console.error('同步失败：', err);

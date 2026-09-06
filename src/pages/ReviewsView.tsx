@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import type { BookItem, ReviewItem } from '../types/weread';
-import { fetchAllNotebooks, fetchBookReviews } from '../services/weread';
+import { fetchAllNotebooks, fetchAllBookReviews } from '../services/weread';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { exportItemToImage } from '../utils/exportImage';
@@ -85,8 +85,8 @@ export default function ReviewsView() {
         const settled = await Promise.all(
           slice.map(async n => {
             try {
-              const rv = await fetchBookReviews(n.bookId);
-          return (rv.reviews || [])
+              const allReviews = await fetchAllBookReviews(n.bookId);
+          return allReviews
             .filter(r => r.review?.type === 4 && (r.review.htmlContent || r.review.content))
             .map(r => ({ book: n.book as BookItem, review: r.review, likesCount: r.likesCount }));
             } catch {

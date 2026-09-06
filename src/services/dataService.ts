@@ -2,6 +2,7 @@ import {
   fetchAllNotebooks,
   fetchBookmarks,
   fetchBookReviews,
+  fetchAllBookReviews,
 } from './weread';
 import {
   isTauri,
@@ -167,8 +168,8 @@ export async function getTopReviews(
     const results = await Promise.all(chunk.map(async (nb) => {
       const book = nb.book!;
       try {
-        const rvData = await fetchBookReviews(book.bookId);
-        return (rvData.reviews || [])
+        const allReviews = await fetchAllBookReviews(book.bookId);
+        return allReviews
           .filter(rv => (rv.likesCount ?? 0) > 0 && (rv.review?.content || rv.review?.htmlContent))
           .map<TopReviewItem>(rv => ({
             reviewId: rv.review.reviewId,

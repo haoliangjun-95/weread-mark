@@ -3,7 +3,7 @@ import {
   fetchShelf,
   fetchAllNotebooks,
   fetchBookmarks,
-  fetchBookReviews,
+  fetchAllBookReviews,
   fetchReadingStats,
 } from './weread';
 import type {
@@ -148,9 +148,9 @@ const SYNC_CONCURRENCY = 10;
 
 /**
  * 全量同步：书架 + 笔记列表落 books 表，再逐书拉划线/想法/书评落明细表，
- * 最后写统计快照与 FTS 索引。每本书一个事务（先删旧再插），远端删除能正确反映。
+ * 最后写统计快照。返回同步失败（重试后仍失败）的书数量。
  */
-export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<void> {
+export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<number> {
   const db = await getDb();
 
   // 1. 书架 + 笔记列表 → books
@@ -198,28 +198,49 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<v
     );
   }
 
-  // 2. 逐书同步划线/想法/书评
+  // 2. 逐书同步划线/想法/书评（想法/书评按 synckey 翻页拉全，接口每页只有 20 条）
   const targets = (notebooks.books || []).filter(nb => nb.book?.bookId);
   let done = 0;
+  const failedBooks: typeof targets = [];
   onProgress?.({ done: 0, total: targets.length, phase: 'contents' });
+
+  const syncOne = async (nb: (typeof targets)[number]) => {
+    const bookId = nb.book!.bookId;
+    const [bmData, allReviews] = await Promise.all([
+      fetchBookmarks(bookId),
+      fetchAllBookReviews(bookId),
+    ]);
+    await syncBookContents(db, bookId, bmData.updated || [], bmData.chapters || [], allReviews);
+  };
 
   for (let i = 0; i < targets.length; i += SYNC_CONCURRENCY) {
     const chunk = targets.slice(i, i + SYNC_CONCURRENCY);
     await Promise.all(chunk.map(async (nb) => {
-      const bookId = nb.book!.bookId;
       try {
-        const [bmData, rvData] = await Promise.all([
-          fetchBookmarks(bookId),
-          fetchBookReviews(bookId),
-        ]);
-        await syncBookContents(db, bookId, bmData.updated || [], bmData.chapters || [], rvData.reviews || []);
+        await syncOne(nb);
       } catch (err) {
-        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，跳过：`, err);
+        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, err);
+        failedBooks.push(nb);
       } finally {
         done++;
         onProgress?.({ done, total: targets.length, phase: 'contents' });
       }
     }));
+  }
+
+  // 失败的书串行重试一轮（往往是瞬时限流），仍失败的计入返回值
+  if (failedBooks.length > 0) {
+    console.warn(`[sync] ${failedBooks.length} 本书失败，开始重试`);
+    const retry = [...failedBooks];
+    failedBooks.length = 0;
+    for (const nb of retry) {
+      try {
+        await syncOne(nb);
+      } catch (err) {
+        console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, err);
+        failedBooks.push(nb);
+      }
+    }
   }
 
   // 3. 统计快照 + FTS + lastSyncAt
@@ -242,6 +263,7 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<v
     'lastSyncAt',
     String(Math.floor(Date.now() / 1000)),
   ]);
+  return failedBooks.length;
 }
 
 async function syncBookContents(
