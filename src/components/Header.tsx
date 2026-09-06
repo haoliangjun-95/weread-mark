@@ -48,6 +48,7 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                                         onClick={() => onNavigate(item.key)}
                                         disabled={disabled}
                                         title={disabled ? '请先在设置页配置 API Key' : item.label}
+                                        aria-current={currentView === item.key ? 'page' : undefined}
                                         className="px-3 lg:px-4 py-2 rounded-xl text-sm font-medium transition-all"
                                         style={{
                                             backgroundColor: currentView === item.key ? 'var(--accent-color)' : 'transparent',
@@ -72,8 +73,9 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                                         onClick={() => onNavigate(item.key)}
                                         disabled={disabled}
                                         aria-label={item.label}
+                                        aria-current={currentView === item.key ? 'page' : undefined}
                                         title={disabled ? '请先在设置页配置 API Key' : item.label}
-                                        className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all"
+                                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg text-base transition-all"
                                         style={{
                                             backgroundColor: currentView === item.key ? 'var(--accent-color)' : 'transparent',
                                             color: currentView === item.key ? 'var(--accent-contrast)' : disabled ? 'var(--text-muted)' : 'var(--text-secondary)',

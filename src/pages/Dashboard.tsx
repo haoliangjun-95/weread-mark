@@ -515,12 +515,13 @@ export default function Dashboard({ hasKey }: DashboardProps) {
              className={`h-full bg-gradient-to-br ${card.accent} rounded-xl sm:rounded-2xl border p-2 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200`}
            >
              <div className="flex items-center justify-center sm:justify-between gap-1 sm:gap-0 mb-0.5 sm:mb-3">
-               <p className="text-[10px] sm:text-sm text-gray-500 truncate">{card.label}</p>
-               <span className={`w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center text-[10px] sm:text-sm flex-shrink-0 ${card.iconBg}`}>
+               <p className="text-xs sm:text-sm text-gray-500 leading-snug">{card.label}</p>
+               <span className={`w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center text-xs sm:text-sm flex-shrink-0 ${card.iconBg}`}>
                  {card.icon}
                </span>
              </div>
-             <p className="text-xs sm:text-2xl font-bold text-gray-900 text-center sm:text-left truncate">{card.value}</p>
+             {/* 数值不截断：长时长（如 128小时）完整换行显示 */}
+             <p className="text-sm sm:text-2xl font-bold text-gray-900 text-center sm:text-left leading-tight break-words">{card.value}</p>
            </div>
          ))}
        </div>

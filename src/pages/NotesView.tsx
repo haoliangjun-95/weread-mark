@@ -964,7 +964,8 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                     ))}
                   </div>
                 )}
-                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                {/* 触屏设备常显；桌面 hover 或键盘聚焦子按钮时显示 */}
+                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-200">
                   <button
                     onClick={async () => {
                       let textToCopy = `${bookmark.markText || ''}`;

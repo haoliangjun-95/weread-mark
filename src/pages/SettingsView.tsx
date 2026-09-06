@@ -7,6 +7,7 @@ import { syncAll, getLocalStats, getSyncStatus, isTauri } from '../services/loca
 import type { SyncProgress, LocalStats } from '../services/localDb';
 import { markSynced } from '../services/dataService';
 import { showToast } from '../utils/toast';
+import { useDialogLifecycle } from '../utils/dialog';
 import type { ViewType, ThemeType, FontType, FontSize, ExportStyleType } from '../App';
 
 interface SettingsViewProps {
@@ -23,15 +24,15 @@ interface SettingsViewProps {
   onApiKeyChange: () => void;
 }
 
-const themes: { key: ThemeType; label: string; desc: string; icon: string; bg: string; border: string; activeBg: string; activeBorder: string; swatch: string }[] = [
-  { key: 'default', label: '默认', desc: '清新蓝白', icon: '☀️', bg: '#ffffff', border: '#dfe7f0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: '#2367d9' },
-  { key: 'dark', label: '深色', desc: '深邃暗夜', icon: '🌙', bg: '#182133', border: '#263449', activeBg: '#203a5e', activeBorder: '#5aa2ff', swatch: '#5aa2ff' },
-  { key: 'eye', label: '护眼', desc: '暖茶书卷', icon: '◐', bg: '#fffaf0', border: '#e4d7ba', activeBg: '#eee5d0', activeBorder: '#736145', swatch: '#736145' },
-  { key: 'green', label: '浅绿', desc: '纸页浅茵', icon: '◍', bg: '#f7fff5', border: '#cfe4d0', activeBg: '#d8eadc', activeBorder: '#4f7b62', swatch: '#4f7b62' },
-  { key: 'paper', label: '纸白', desc: '清透纸页', icon: '□', bg: '#fbfaf7', border: '#dedbd3', activeBg: '#f2f0ea', activeBorder: '#70706a', swatch: '#f7f6f1' },
-  { key: 'mist', label: '冷灰', desc: '薄雾纸纹', icon: '◌', bg: '#f2f5f4', border: '#d4dcdd', activeBg: '#e4ecee', activeBorder: '#587178', swatch: '#dfe9eb' },
-  { key: 'apricot', label: '杏暖', desc: '落日书页', icon: '◒', bg: '#fff1df', border: '#efd0ac', activeBg: '#ffe3bd', activeBorder: '#b87530', swatch: '#f4a65f' },
-  { key: 'rose', label: '月粉', desc: '柔粉月光', icon: '○', bg: '#f9e8e6', border: '#e8c8c9', activeBg: '#f3d7d8', activeBorder: '#ad6c73', swatch: '#d99a9f' },
+const themes: { key: ThemeType; label: string; desc: string; icon: string; bg: string; border: string; activeBg: string; activeBorder: string; swatch: string; previewText: string; previewMuted: string }[] = [
+  { key: 'default', label: '默认', desc: '清新蓝白', icon: '☀️', bg: '#ffffff', border: '#dfe7f0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: '#2367d9', previewText: '#1f2937', previewMuted: '#5b6472' },
+  { key: 'dark', label: '深色', desc: '深邃暗夜', icon: '🌙', bg: '#182133', border: '#263449', activeBg: '#203a5e', activeBorder: '#8fc0ff', swatch: '#5aa2ff', previewText: '#e5edff', previewMuted: '#9db1cf' },
+  { key: 'eye', label: '护眼', desc: '暖茶书卷', icon: '◐', bg: '#fffaf0', border: '#e4d7ba', activeBg: '#eee5d0', activeBorder: '#5c4b36', swatch: '#736145', previewText: '#463a27', previewMuted: '#82735a' },
+  { key: 'green', label: '浅绿', desc: '纸页浅茵', icon: '◍', bg: '#f7fff5', border: '#cfe4d0', activeBg: '#d8eadc', activeBorder: '#3e6350', swatch: '#4f7b62', previewText: '#2c4636', previewMuted: '#66806f' },
+  { key: 'paper', label: '纸白', desc: '清透纸页', icon: '□', bg: '#fbfaf7', border: '#dedbd3', activeBg: '#f2f0ea', activeBorder: '#565650', swatch: '#f7f6f1', previewText: '#3c3c37', previewMuted: '#7b7b73' },
+  { key: 'mist', label: '冷灰', desc: '薄雾纸纹', icon: '◌', bg: '#f2f5f4', border: '#d4dcdd', activeBg: '#e4ecee', activeBorder: '#44585f', swatch: '#dfe9eb', previewText: '#2e3f47', previewMuted: '#66787f' },
+  { key: 'apricot', label: '杏暖', desc: '落日书页', icon: '◒', bg: '#fff1df', border: '#efd0ac', activeBg: '#ffe3bd', activeBorder: '#8f5a22', swatch: '#f4a65f', previewText: '#5e4018', previewMuted: '#96744a' },
+  { key: 'rose', label: '月粉', desc: '柔粉月光', icon: '○', bg: '#f9e8e6', border: '#e8c8c9', activeBg: '#f3d7d8', activeBorder: '#8a545b', swatch: '#d99a9f', previewText: '#5f3238', previewMuted: '#93646b' },
 ];
 
 const fonts: { key: FontType; label: string; preview: string }[] = [
@@ -328,7 +329,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>主题</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>当前：{themes.find(item => item.key === theme)?.label}</p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3 sm:gap-4">
                   {themes.map(t => {
                     const active = theme === t.key;
                     return (
@@ -336,11 +337,13 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                         key={t.key}
                         type="button"
                         onClick={() => onThemeChange(t.key)}
+                        aria-pressed={active}
                         className="relative min-h-32 rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
                         style={{
                           backgroundColor: active ? t.activeBg : t.bg,
                           borderColor: active ? t.activeBorder : t.border,
-                          color: active ? t.activeBorder : 'var(--text-secondary)',
+                          // 预览卡文字使用与预览背景配套的颜色，保证对比度不随当前主题漂移
+                          color: active ? t.activeBorder : t.previewText,
                           boxShadow: active ? `0 12px 30px -20px ${t.activeBorder}` : 'none',
                         }}
                       >
@@ -351,7 +354,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                           </span>
                           <span className="min-w-0">
                             <span className="block text-sm font-bold">{t.label}</span>
-                            <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: active ? t.activeBorder : 'var(--text-muted)' }}>
+                            <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: active ? t.activeBorder : t.previewMuted }}>
                               {t.desc}
                             </span>
                           </span>
@@ -367,7 +370,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>字体</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>当前：{fonts.find(item => item.key === font)?.label}</p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3 sm:gap-4">
                   {fonts.map(f => {
                     const active = font === f.key;
                     return (
@@ -419,9 +422,11 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                       >{opt.label}</button>
                     );
                   })}
-                  <span className="text-xs mx-1" style={{ color: 'var(--text-muted)' }}>自定义</span>
+                  <label htmlFor="font-size-input" className="text-xs mx-1" style={{ color: 'var(--text-muted)' }}>自定义</label>
                   <input
+                    id="font-size-input"
                     type="number"
+                    aria-label="自定义字号（10-20 像素）"
                     min={10}
                     max={20}
                     value={(() => {
@@ -483,9 +488,19 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
 }
 
 function AboutDialog({ onClose }: { onClose: () => void }) {
+  const panelRef = useDialogLifecycle(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
-      <div className="max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-2xl border shadow-2xl" style={cardStyle} onClick={e => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="关于微痕"
+        tabIndex={-1}
+        className="max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-2xl border shadow-2xl outline-none"
+        style={cardStyle}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-light)' }}>
           <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>关于微痕</h3>
           <button
@@ -664,12 +679,15 @@ function ApiKeyCard({ keyExpired, onNavigate, onApiKeyChange }: { keyExpired?: b
         {editing ? (
           <div className="space-y-3">
             <div className="relative">
+              <label htmlFor="api-key-input" className="sr-only">微信读书 API Key</label>
               <input
+                id="api-key-input"
                 type={show ? 'text' : 'password'}
                 value={value}
                 onChange={e => { setValue(e.target.value); setKeyError(null); }}
                 onKeyDown={e => e.key === 'Enter' && handleSave()}
                 placeholder="wrk-xxxxxxxxxxxx"
+                aria-describedby="api-key-help"
                 className="h-11 w-full rounded-xl border pl-3 pr-11 text-sm font-mono focus:outline-none focus:ring-2"
                 style={{ borderColor: 'var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)' }}
               />
@@ -683,6 +701,7 @@ function ApiKeyCard({ keyExpired, onNavigate, onApiKeyChange }: { keyExpired?: b
                 {show ? '🙈' : '👁'}
               </button>
             </div>
+            <p id="api-key-help" className="sr-only">格式形如 wrk- 开头的字符串，从微信读书官网获取</p>
             <div className="flex gap-2">
               <button
                 type="button"

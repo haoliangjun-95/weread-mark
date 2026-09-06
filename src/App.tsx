@@ -122,7 +122,8 @@ function App() {
 
    useEffect(() => {
      localStorage.setItem(FONT_SIZE_KEY, String(fontSize));
-     const val = fontSize === 'auto' ? 'clamp(13px, 1.6vw, 16px)'
+     // 根字号稳定为 16px：避免小屏缩到 13px 导致 text-xs 不足 10px、触控目标过小
+     const val = fontSize === 'auto' ? '16px'
        : typeof fontSize === 'string' ? `${FONT_SIZE_PRESETS[fontSize as keyof typeof FONT_SIZE_PRESETS]}px`
        : `${fontSize}px`;
      document.documentElement.style.setProperty('--font-size-base', val);
