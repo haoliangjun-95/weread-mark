@@ -81,9 +81,9 @@ class MissingApiKeyError extends Error {
   }
 }
 
-// ============ 全局并发限制 ============
-// 网关对单 Key 有频控，全量同步/扫描瞬时并发过高会触发 403 限流。
-// 这里用信号量把同时在途的请求数压到上限以下，所有 callApi 共享。
+// ============ 全局并发限制与配速 ============
+// 网关对单 Key 有频控（按并发+按分钟配额），全量同步/扫描瞬时并发过高会触发 403。
+// 信号量限制同时在途的请求数，再加全局最小发起间隔做配速，所有 callApi 共享。
 class ThrottledError extends Error {
   constructor(detail: string) {
     super(detail);
@@ -91,17 +91,21 @@ class ThrottledError extends Error {
   }
 }
 
-const MAX_CONCURRENT_REQUESTS = 5;
+const MAX_CONCURRENT_REQUESTS = 2;
+const MIN_REQUEST_INTERVAL_MS = 300; // 全局配速：约 3 个请求/秒上限
 let activeCount = 0;
+let lastRequestAt = 0;
 const waitQueue: (() => void)[] = [];
 
 async function acquireSlot(): Promise<void> {
-  if (activeCount < MAX_CONCURRENT_REQUESTS) {
-    activeCount++;
-    return;
+  if (activeCount >= MAX_CONCURRENT_REQUESTS) {
+    await new Promise<void>(resolve => waitQueue.push(resolve));
   }
-  await new Promise<void>(resolve => waitQueue.push(resolve));
   activeCount++;
+  // 配速：与上一个请求的发起时间至少间隔 MIN_REQUEST_INTERVAL_MS
+  const wait = lastRequestAt + MIN_REQUEST_INTERVAL_MS - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastRequestAt = Date.now();
 }
 
 function releaseSlot(): void {
@@ -117,13 +121,14 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     throw new MissingApiKeyError();
   }
 
-  // 403/429 是网关频控信号，指数退避后重试
-  const MAX_RETRIES = 2;
+  // 403/429 是网关频控信号，较长退避后重试，给网关配额恢复留时间
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS_MS = [3000, 8000, 20000];
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      await new Promise(r => setTimeout(r, 1000 * attempt * attempt));
+      await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
     }
     await acquireSlot();
     try {
