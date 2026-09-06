@@ -34,8 +34,12 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                         <h1 className="text-sm sm:text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
                             微痕
                         </h1>
-                        <span className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-mono flex-shrink-0" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-              v{__APP_VERSION__}
+                        <span
+              className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-mono flex-shrink-0"
+              style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
+              title={`构建于 ${new Date(__BUILD_TIME__).toLocaleString('zh-CN')}`}
+            >
+              v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
             </span>
                     </div>
                     <div className="flex items-center gap-1">
