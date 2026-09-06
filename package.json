@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "dev:clean": "pkill -f \"tauri dev\" 2>/dev/null; pkill -f \"target/debug/weread-mark\" 2>/dev/null; pkill -f vite 2>/dev/null; sleep 1; lsof -ti :5173 >/dev/null 2>&1 && echo \"5173 仍被占用: $(lsof -ti :5173)\" || echo \"端口已释放\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
