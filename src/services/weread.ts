@@ -85,6 +85,10 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     throw new MissingApiKeyError();
   }
 
+  // 15 秒超时，防止个别请求永久挂起拖死整页加载
+  const timeoutSignal = AbortSignal.timeout(15000);
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
   let response: Response;
   try {
     response = await fetch(API_URL, {
@@ -97,7 +101,7 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
         ...params,
         skill_version: SKILL_VERSION,
       }),
-      signal,
+      signal: requestSignal,
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {

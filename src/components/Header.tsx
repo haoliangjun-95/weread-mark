@@ -11,6 +11,7 @@ const navItems: { key: ViewType; label: string; icon: string }[] = [
     { key: 'home', label: '搜索', icon: '🔍' },
     { key: 'shelf', label: '书架', icon: '📚' },
     { key: 'reviews', label: '书评墙', icon: '⭐' },
+    { key: 'rank', label: '排行榜', icon: '🏆' },
     { key: 'dashboard', label: '看板', icon: '📊' },
     { key: 'notes', label: '笔记', icon: '📝' },
     { key: 'settings', label: '设置', icon: '⚙️' },

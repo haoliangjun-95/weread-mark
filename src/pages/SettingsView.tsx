@@ -115,7 +115,9 @@ function SyncCard() {
       await refreshStatus();
     } catch (err) {
       console.error('同步失败：', err);
-      showToast(`同步失败：${err instanceof Error ? err.message : '请重试'}`, 'error');
+      // Tauri IPC 拒绝时抛的是字符串而非 Error，String() 兜底保证错误可见
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`同步失败：${msg || '未知错误'}`, 'error');
     } finally {
       setSyncing(false);
       setProgress(null);

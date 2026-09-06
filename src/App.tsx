@@ -5,13 +5,14 @@ import Dashboard from './pages/Dashboard';
 import ShelfView from './pages/ShelfView';
 import NotesView from './pages/NotesView';
 import ReviewsView from './pages/ReviewsView';
+import RankView from './pages/RankView';
 import SearchView from './pages/SearchView';
 import SettingsView from './pages/SettingsView';
 import Toaster from './components/Toast';
 import { getApiKey } from './services/weread';
 import type { BookItem } from './types/weread';
 
- export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'settings';
+ export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'settings';
  export type ThemeType = 'default' | 'dark' | 'eye' | 'green' | 'paper' | 'mist' | 'apricot' | 'rose';
  export type FontType = 'sans' | 'serif' | 'wenkai' | 'yousong' | 'laosong' | 'notosans' | 'mashan' | 'zcool';
  export type FontSize = 'auto' | 'sm' | 'md' | 'lg' | 'xl' | number;
@@ -28,7 +29,7 @@ const THEME_KEY = 'weread-theme';
 const FONT_KEY = 'weread-font';
 const FONT_SIZE_KEY = 'weread-font-size';
 const FONT_SIZE_PRESETS = { sm: 14, md: 16, lg: 18, xl: 20 } as const;
-const VALID_VIEWS: ViewType[] = ['home', 'dashboard', 'shelf', 'notes', 'reviews', 'settings'];
+const VALID_VIEWS: ViewType[] = ['home', 'dashboard', 'shelf', 'notes', 'reviews', 'rank', 'settings'];
 const VALID_THEMES: ThemeType[] = ['default', 'dark', 'eye', 'green', 'paper', 'mist', 'apricot', 'rose'];
 const VALID_FONTS: FontType[] = ['sans', 'serif', 'wenkai', 'yousong', 'laosong', 'notosans', 'mashan', 'zcool'];
 const VERSION_KEY = 'weread-app-version';
@@ -170,6 +171,7 @@ function App() {
     { key: 'shelf' as ViewType, element: <ShelfView onSelectBook={handleSelectBook} /> },
     { key: 'notes' as ViewType, element: <NotesView selectedBook={selectedBook} onBack={() => { setSelectedBook(null); setNotesBackLabel('返回笔记列表'); if (notesSource) { setCurrentView(notesSource); setNotesSource(null); } }} onSelectBook={handleSelectBook} highlightTarget={highlightTarget} exportStyle={exportStyle} backLabel={notesBackLabel} /> },
     { key: 'reviews' as ViewType, element: <ReviewsView /> },
+    { key: 'rank' as ViewType, element: <RankView onSelectBook={handleSelectBook} /> },
     { key: 'settings' as ViewType, element: <SettingsView theme={theme} onThemeChange={setTheme} font={font} onFontChange={setFont} fontSize={fontSize} onFontSizeChange={setFontSize} keyExpired={keyExpired} exportStyle={exportStyle} onExportStyleChange={setExportStyle} onNavigate={handleNavigate} onApiKeyChange={syncApiKeyState} /> },
   ];
 

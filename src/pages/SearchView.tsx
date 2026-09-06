@@ -145,8 +145,14 @@ export default function SearchView({ onSelectBook }: SearchViewProps) {
     setFailedBooks([]);
     setDisplayCount(30);
 
-    // 本地 FTS 秒搜（桌面版已同步）；失败或未同步回落在线流式搜索
-    if (localMode) {
+    // 本地秒搜（桌面版已同步）；失败或未同步回落在线流式搜索。
+    // 每次实时检测同步状态：同步完成后无需重启/刷新即可生效
+    let useLocal = localMode;
+    if (!useLocal && isTauri) {
+      useLocal = await isSynced();
+      if (useLocal) setLocalMode(true);
+    }
+    if (useLocal) {
       try {
         const local = await searchLocal(kw);
         if (local && !ac.signal.aborted) {

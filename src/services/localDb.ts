@@ -28,6 +28,8 @@ function getDb(): Promise<Database> {
       await migrate(db);
       return db;
     });
+    // 失败时清除缓存，否则一次失败后（如权限问题）后续重试永远拿到同一个 rejected promise
+    dbPromise.catch(() => { dbPromise = null; });
   }
   return dbPromise;
 }
@@ -120,6 +122,8 @@ async function migrate(db: Database): Promise<void> {
 }
 
 async function ensureFts(db: Database): Promise<void> {
+  // FTS5 默认分词器不切分中文，召回不全，已改用 LIKE 查询（见 ftsSearch）。
+  // 保留建表仅为兼容已存在这些表的旧库；新同步不再写入 FTS 数据。
   await db.execute(`
     CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
       markText, content='bookmarks', content_rowid='rowid'
@@ -130,12 +134,6 @@ async function ensureFts(db: Database): Promise<void> {
       content, content='reviews', content_rowid='rowid'
     )
   `);
-}
-
-/** 全量重建 FTS 索引（数据量小，同步后重建最简单可靠） */
-async function rebuildFts(db: Database): Promise<void> {
-  await db.execute('INSERT INTO bookmarks_fts(bookmarks_fts) VALUES (?)', ['rebuild']);
-  await db.execute('INSERT INTO reviews_fts(reviews_fts) VALUES (?)', ['rebuild']);
 }
 
 // ============ 同步 ============
@@ -240,7 +238,6 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<v
     console.warn('[sync] 统计快照写入失败（不影响主同步）：', err);
   }
 
-  await rebuildFts(db);
   await db.execute('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     'lastSyncAt',
     String(Math.floor(Date.now() / 1000)),
@@ -428,6 +425,48 @@ export async function queryBookDetail(bookId: string): Promise<BookDetailResult>
   return { bookmarks, chapters, reviews };
 }
 
+export interface TopReviewItem {
+  reviewId: string;
+  bookId: string;
+  bookTitle: string;
+  bookAuthor: string;
+  bookCover: string;
+  content: string;
+  htmlContent?: string;
+  createTime: number;
+  likesCount: number;
+  /** 4=书评，其余为想法 */
+  type: number | null;
+  chapterName?: string;
+}
+
+/** 本地点赞排行：想法+书评按 likesCount 降序 */
+export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
+  const db = await getDb();
+  const rows = await db.select<{ [k: string]: unknown }[]>(
+    `SELECT r.reviewId, r.bookId, r.content, r.htmlContent, r.createTime, r.likesCount, r.type, r.chapterName,
+            b.title AS bookTitle, b.author AS bookAuthor, b.cover AS bookCover
+     FROM reviews r JOIN books b ON b.bookId = r.bookId
+     WHERE r.likesCount > 0
+     ORDER BY r.likesCount DESC, r.createTime DESC
+     LIMIT ?`,
+    [limit],
+  );
+  return rows.map(r => ({
+    reviewId: String(r.reviewId),
+    bookId: String(r.bookId),
+    bookTitle: String(r.bookTitle || ''),
+    bookAuthor: String(r.bookAuthor || ''),
+    bookCover: String(r.bookCover || ''),
+    content: String(r.content || ''),
+    htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+    createTime: Number(r.createTime || 0),
+    likesCount: Number(r.likesCount || 0),
+    type: r.type == null ? null : Number(r.type),
+    chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+  }));
+}
+
 /** 本地查询某本书是否含书评（type=4），用于书架卡片 ⭐ 徽章 */
 export async function queryHasBookReview(bookId: string): Promise<boolean> {
   const db = await getDb();
@@ -445,31 +484,34 @@ export interface LocalSearchResult {
   chapterName?: string;
 }
 
-/** FTS5 全文搜索：划线 + 想法/书评内容。关键词作为前缀短语匹配，双引号包裹防 FTS 语法注入 */
+/**
+ * 本地全文搜索：划线 + 想法/书评内容。
+ * 注意：FTS5 默认分词器不切分中文（整句一个 token），中文召回严重不全，
+ * 本地数据量小（万级），LIKE 子串匹配几毫秒出结果且召回完整，故弃用 FTS。
+ */
 export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSearchResult[]> {
   const db = await getDb();
-  const kw = keyword.replace(/"/g, '""').trim();
+  const kw = keyword.trim();
   if (!kw) return [];
-  const match = `"${kw}"*`;
+  const escaped = kw.replace(/[\\%_]/g, m => `\\${m}`);
+  const pattern = `%${escaped}%`;
 
   const [bmHits, rvHits] = await Promise.all([
     db.select<{ [k: string]: unknown }[]>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               bm.bookmarkId, bm.markText, bm.createTime, bm.chapterUid,
               (SELECT title FROM chapters c WHERE c.bookId = bm.bookId AND c.chapterUid = bm.chapterUid) AS chapterName
-       FROM bookmarks_fts f JOIN bookmarks bm ON bm.rowid = f.rowid
-       JOIN books b ON b.bookId = bm.bookId
-       WHERE bookmarks_fts MATCH ?
+       FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
+       WHERE bm.markText LIKE ? ESCAPE '\\'
        ORDER BY bm.createTime DESC LIMIT ?`,
-      [match, limit]),
+      [pattern, limit]),
     db.select<{ [k: string]: unknown }[]>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               r.reviewId, r.content, r.createTime, r.chapterName, r.type
-       FROM reviews_fts f JOIN reviews r ON r.rowid = f.rowid
-       JOIN books b ON b.bookId = r.bookId
-       WHERE reviews_fts MATCH ?
+       FROM reviews r JOIN books b ON b.bookId = r.bookId
+       WHERE r.content LIKE ? ESCAPE '\\'
        ORDER BY r.createTime DESC LIMIT ?`,
-      [match, limit]),
+      [pattern, limit]),
   ]);
 
   const toBook = (r: { [k: string]: unknown }): BookItem => ({

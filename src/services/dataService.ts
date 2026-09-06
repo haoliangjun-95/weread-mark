@@ -10,8 +10,10 @@ import {
   queryShelfBooks,
   queryBookDetail,
   queryHasBookReview,
+  queryTopReviews,
   ftsSearch,
 } from './localDb';
+import type { TopReviewItem } from './localDb';
 import type { LocalSearchResult } from './localDb';
 import type { BookItem, NotebookItem } from '../types/weread';
 import type { BookDetailResult } from './localDb';
@@ -111,4 +113,93 @@ export async function searchLocal(keyword: string): Promise<LocalSearchResult[] 
 /** 是否已同步本地库（用于 UI 提示「同步后可秒搜」） */
 export async function isSynced(): Promise<boolean> {
   return localReady();
+}
+
+// ============ 点赞排行榜 ============
+
+const RANK_CACHE_KEY = 'weread-rank-cache-v1';
+const RANK_CACHE_TTL = 10 * 60 * 1000;
+
+export interface RankScanProgress {
+  done: number;
+  total: number;
+}
+
+/**
+ * 点赞排行（想法+书评按 likesCount 降序）：
+ * 桌面版已同步 → 本地库秒出；否则在线扫描全部笔记书（带进度），结果缓存 10 分钟。
+ */
+export async function getTopReviews(
+  limit = 200,
+  onProgress?: (p: RankScanProgress) => void,
+  isCancelled?: () => boolean,
+): Promise<TopReviewItem[]> {
+  if (await localReady()) {
+    try {
+      return await queryTopReviews(limit);
+    } catch (err) {
+      console.warn('[dataService] 本地排行读取失败，回退在线：', err);
+    }
+  }
+
+  // 在线路径：sessionStorage 缓存 10 分钟
+  try {
+    const cached = sessionStorage.getItem(RANK_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached) as { ts: number; data: TopReviewItem[] };
+      if (Date.now() - parsed.ts < RANK_CACHE_TTL && Array.isArray(parsed.data)) {
+        return parsed.data.slice(0, limit);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const notebooks = await getNotebooks();
+  const targets = notebooks.filter(nb => nb.reviewCount > 0 && nb.book?.bookId);
+  const collected: TopReviewItem[] = [];
+  let done = 0;
+  const CONCURRENCY = 10;
+
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    if (isCancelled?.()) return collected;
+    const chunk = targets.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(chunk.map(async (nb) => {
+      const book = nb.book!;
+      try {
+        const rvData = await fetchBookReviews(book.bookId);
+        return (rvData.reviews || [])
+          .filter(rv => (rv.likesCount ?? 0) > 0 && (rv.review?.content || rv.review?.htmlContent))
+          .map<TopReviewItem>(rv => ({
+            reviewId: rv.review.reviewId,
+            bookId: book.bookId,
+            bookTitle: book.title || '',
+            bookAuthor: book.author || '',
+            bookCover: book.cover || '',
+            content: rv.review.content || '',
+            htmlContent: rv.review.htmlContent,
+            createTime: rv.review.createTime || 0,
+            likesCount: rv.likesCount ?? 0,
+            type: rv.review.type ?? null,
+            chapterName: rv.review.chapterName,
+          }));
+      } catch {
+        return [] as TopReviewItem[];
+      } finally {
+        done++;
+      }
+    }));
+    if (isCancelled?.()) return collected;
+    collected.push(...results.flat());
+    onProgress?.({ done: Math.min(done, targets.length), total: targets.length });
+  }
+
+  collected.sort((a, b) => b.likesCount - a.likesCount || b.createTime - a.createTime);
+  const top = collected.slice(0, 500);
+  try {
+    sessionStorage.setItem(RANK_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: top }));
+  } catch {
+    // ignore
+  }
+  return top.slice(0, limit);
 }
