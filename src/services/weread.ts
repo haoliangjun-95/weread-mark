@@ -91,8 +91,8 @@ class ThrottledError extends Error {
   }
 }
 
-const MAX_CONCURRENT_REQUESTS = 3;
-const MIN_REQUEST_INTERVAL_MS = 350; // 全局配速：约 3 请求/秒上限
+const MAX_CONCURRENT_REQUESTS = 6;
+const MIN_REQUEST_INTERVAL_MS = 150; // 全局配速：约 6-7 请求/秒上限
 let activeCount = 0;
 let lastRequestAt = 0;
 const waitQueue: (() => void)[] = [];
