@@ -12,8 +12,10 @@ import {
   queryBookDetail,
   queryHasBookReview,
   queryTopReviews,
+  queryOnThisDay,
   ftsSearch,
 } from './localDb';
+import type { OnThisDayItem } from './localDb';
 import type { TopReviewItem } from './localDb';
 import type { LocalSearchResult } from './localDb';
 import type { BookItem, NotebookItem } from '../types/weread';
@@ -99,6 +101,17 @@ export async function getBookDetail(bookId: string): Promise<BookDetailResult | 
     chapters: bmData.chapters || [],
     reviews: allReviews,
   };
+}
+
+/** 往年今天动态：仅本地库（在线全库扫描代价过大，刻意不做降级）；未同步返回 null */
+export async function getOnThisDay(): Promise<OnThisDayItem[] | null> {
+  if (!(await localReady())) return null;
+  try {
+    return await queryOnThisDay();
+  } catch (err) {
+    console.warn('[dataService] 往年今天查询失败：', err);
+    return null;
+  }
 }
 
 /** 是否含书评：本地已同步时直接查库，未同步返回 null 由调用方走在线扫描 */

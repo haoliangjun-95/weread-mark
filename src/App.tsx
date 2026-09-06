@@ -186,7 +186,7 @@ function App() {
 
   const views = [
     { key: 'home' as ViewType, element: <SearchView onSelectBook={handleSelectBook} /> },
-    { key: 'dashboard' as ViewType, element: <Dashboard hasKey={hasKey} /> },
+    { key: 'dashboard' as ViewType, element: <Dashboard hasKey={hasKey} onSelectBook={handleSelectBook} /> },
     { key: 'shelf' as ViewType, element: <ShelfView onSelectBook={handleSelectBook} /> },
     { key: 'notes' as ViewType, element: <NotesView selectedBook={selectedBook} onBack={() => { setSelectedBook(null); setNotesBackLabel('返回笔记列表'); if (notesSource) { setCurrentView(notesSource); setNotesSource(null); } }} onSelectBook={handleSelectBook} highlightTarget={highlightTarget} exportStyle={exportStyle} backLabel={notesBackLabel} /> },
     { key: 'reviews' as ViewType, element: <ReviewsView /> },

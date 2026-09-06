@@ -571,6 +571,71 @@ export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
   }));
 }
 
+export interface OnThisDayItem {
+  kind: 'highlight' | 'thought' | 'review';
+  content: string;
+  htmlContent?: string;
+  createTime: number;
+  targetId: string;
+  book: BookItem;
+}
+
+/** 往年今天：历年同月同日的划线/想法/书评（纯本地查询，不做在线降级） */
+export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
+  const db = await getDb();
+  const now = new Date();
+  const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const thisYear = String(now.getFullYear());
+  // unixepoch 默认按 UTC 解析，加 localtime 修正为本地时区（ createTime 是北京时间语境下的记录）
+  const timeCond = `strftime('%m-%d', %s, 'unixepoch', 'localtime') = ? AND strftime('%Y', %s, 'unixepoch', 'localtime') < ?`;
+
+  const toBook = (r: { [k: string]: unknown }): BookItem => ({
+    bookId: String(r.bookId), title: String(r.title || ''), author: String(r.author || ''),
+    cover: String(r.cover || ''), category: String(r.category || ''),
+    readUpdateTime: Number(r.readUpdateTime || 0), finishReading: Number(r.finishReading || 0),
+    updateTime: Number(r.readUpdateTime || 0), isTop: 0, secret: 0,
+  });
+
+  const [bmHits, rvHits] = await Promise.all([
+    db.select<{ [k: string]: unknown }[]>(
+      `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
+              bm.bookmarkId, bm.markText, bm.createTime
+       FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
+       WHERE ${timeCond.replace(/%s/g, 'bm.createTime')}
+       ORDER BY bm.createTime ASC LIMIT ?`,
+      [monthDay, monthDay, thisYear, limit].flat(),
+    ),
+    db.select<{ [k: string]: unknown }[]>(
+      `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
+              r.reviewId, r.content, r.htmlContent, r.createTime, r.type
+       FROM reviews r JOIN books b ON b.bookId = r.bookId
+       WHERE ${timeCond.replace(/%s/g, 'r.createTime')}
+       ORDER BY r.createTime ASC LIMIT ?`,
+      [monthDay, monthDay, thisYear, limit].flat(),
+    ),
+  ]);
+
+  const items: OnThisDayItem[] = [
+    ...bmHits.map(r => ({
+      kind: 'highlight' as const,
+      content: String(r.markText || ''),
+      createTime: Number(r.createTime || 0),
+      targetId: String(r.bookmarkId),
+      book: toBook(r),
+    })),
+    ...rvHits.map(r => ({
+      kind: (r.type === 4 ? 'review' : 'thought') as 'review' | 'thought',
+      content: String(r.content || ''),
+      htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+      createTime: Number(r.createTime || 0),
+      targetId: String(r.reviewId),
+      book: toBook(r),
+    })),
+  ];
+  items.sort((a, b) => b.createTime - a.createTime);
+  return items;
+}
+
 /** 本地查询某本书是否含书评（type=4），用于书架卡片 ⭐ 徽章 */
 export async function queryHasBookReview(bookId: string): Promise<boolean> {
   const db = await getDb();

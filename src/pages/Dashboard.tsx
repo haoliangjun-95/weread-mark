@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { BookItem } from '../types/weread';
+import type { HighlightTarget } from '../App';
+import OnThisDayCard from '../components/OnThisDayCard';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -32,9 +35,10 @@ type TimeMode = 'weekly' | 'monthly' | 'annually' | 'overall';
 
 interface DashboardProps {
   hasKey: boolean;
+  onSelectBook?: (book: BookItem, target?: HighlightTarget) => void;
 }
 
-export default function Dashboard({ hasKey }: DashboardProps) {
+export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
   const [finishedCount, setFinishedCount] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
   const [readDays, setReadDays] = useState(0);
@@ -443,6 +447,8 @@ export default function Dashboard({ hasKey }: DashboardProps) {
     <>
        {/* Header */}
        <div className="mb-6 sm:mb-8">
+       {/* 往年今天（桌面版本地库，纯本地查询） */}
+       {onSelectBook && <OnThisDayCard onSelectBook={onSelectBook} />}
          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
            <div>
              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
