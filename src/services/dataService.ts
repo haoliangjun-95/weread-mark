@@ -39,9 +39,23 @@ function localReady(): Promise<boolean> {
   return localReadyPromise;
 }
 
+/** 本地库变为可用时广播（视图层监听后重新查询，避免挂载早于同步的组件拿不到数据） */
+const LOCAL_READY_EVENT = 'weread-local-ready';
+
 /** 供同步完成后切换到本地读路径（SettingsView 同步成功时调用）；重新评估完整性，部分失败则保持在线回退 */
 export function markSynced(): void {
-  localReadyPromise = hasLocalData().catch(() => false);
+  localReadyPromise = hasLocalData().catch(() => false).then(ready => {
+    if (ready) {
+      window.dispatchEvent(new Event(LOCAL_READY_EVENT));
+    }
+    return ready;
+  });
+}
+
+/** 监听本地库就绪（同步完成）事件，返回取消函数 */
+export function onLocalReady(listener: () => void): () => void {
+  window.addEventListener(LOCAL_READY_EVENT, listener);
+  return () => window.removeEventListener(LOCAL_READY_EVENT, listener);
 }
 
 /** API Key 变更时调用：清空本地库与会话缓存，读路径回到在线模式，避免读到上一个账号的数据 */

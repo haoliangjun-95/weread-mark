@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { BookItem } from '../types/weread';
-import { getOnThisDay } from '../services/dataService';
+import { getOnThisDay, onLocalReady } from '../services/dataService';
 import type { OnThisDayItem } from '../services/localDb';
 import { richTextToPlain } from '../utils/sanitize';
 import type { HighlightTarget } from '../App';
@@ -24,11 +24,16 @@ export default function OnThisDayCard({ onSelectBook }: OnThisDayCardProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.resolve().then(async () => {
-      const data = await getOnThisDay();
-      if (!cancelled) setItems(data);
-    });
-    return () => { cancelled = true; };
+    const load = () => {
+      void Promise.resolve().then(async () => {
+        const data = await getOnThisDay();
+        if (!cancelled) setItems(data);
+      });
+    };
+    load();
+    // 看板常驻挂载，同步可能晚于挂载完成——监听就绪事件重新查询
+    const off = onLocalReady(load);
+    return () => { cancelled = true; off(); };
   }, []);
 
   const groups = useMemo(() => {

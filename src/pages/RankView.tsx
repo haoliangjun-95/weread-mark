@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { BookItem } from '../types/weread';
 import type { TopReviewItem } from '../services/localDb';
-import { getTopReviews, isTauri } from '../services/dataService';
+import { getTopReviews, isTauri, onLocalReady } from '../services/dataService';
 import { hasLocalData, getLastSyncAt } from '../services/localDb';
 import { useInfiniteScroll } from '../utils/filterUtils';
 import { SkeletonGrid } from '../components/Skeleton';
@@ -75,7 +75,14 @@ export default function RankView({ onSelectBook }: RankViewProps) {
         if (t) setLastSyncText(`数据截至：${new Date(t * 1000).toLocaleString('zh-CN')}`);
       });
     }
-    return () => { cancelledRef.current = true; };
+    // 同步可能晚于本视图挂载完成——就绪后改读本地库并刷新「数据截至」
+    const off = onLocalReady(() => {
+      void load();
+      void getLastSyncAt().then(t => {
+        if (t) setLastSyncText(`数据截至：${new Date(t * 1000).toLocaleString('zh-CN')}`);
+      });
+    });
+    return () => { cancelledRef.current = true; off(); };
   }, [load]);
 
   const updateTab = useCallback((next: RankTab) => {
