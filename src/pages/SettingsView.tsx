@@ -112,10 +112,12 @@ function SyncCard() {
     setSyncing(true);
     setProgress({ done: 0, total: 0, phase: 'books' });
     try {
-      const failedCount = await syncAll(p => setProgress(p));
+      const result = await syncAll(p => setProgress(p));
       markSynced();
-      if (failedCount > 0) {
-        showToast(`同步完成，但有 ${failedCount} 本书失败（可稍后重新同步补齐）`, 'error');
+      if (result.failedCount > 0) {
+        showToast(`同步完成，${result.changedCount} 本有变化，但 ${result.failedCount} 本失败（可稍后重新同步补齐）`, 'error');
+      } else if (result.changedCount < result.totalCount) {
+        showToast(`增量同步完成：${result.changedCount}/${result.totalCount} 本有变化`, 'success');
       } else {
         showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
       }

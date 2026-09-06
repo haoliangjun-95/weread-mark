@@ -157,15 +157,30 @@ const SYNC_CONCURRENCY = 10;
  * 全量同步：书架 + 笔记列表落 books 表，再逐书拉划线/想法/书评落明细表，
  * 最后写统计快照。返回同步失败（重试后仍失败）的书数量。
  */
-export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<number> {
+export interface SyncResult {
+  /** 重试后仍失败的书数量 */
+  failedCount: number;
+  /** 本次实际拉取明细的书数量（增量同步时有变化的书 + 首次同步） */
+  changedCount: number;
+  /** 笔记书总数 */
+  totalCount: number;
+}
+
+export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<SyncResult> {
   const db = await getDb();
 
-  // 1. 书架 + 笔记列表 → books
+  // 1. 书架 + 笔记列表 → books（先读旧库，用于增量判断和保留 syncedAt）
   onProgress?.({ done: 0, total: 0, phase: 'books' });
   const [shelf, notebooks] = await Promise.all([
     fetchShelf().catch(() => null),
     fetchAllNotebooks(),
   ]);
+
+  const existingRows = await db.select<{
+    bookId: string; noteCount: number; reviewCount: number;
+    bookmarkCount: number; markedStatus: number; syncedAt: number;
+  }[]>('SELECT bookId, noteCount, reviewCount, bookmarkCount, markedStatus, syncedAt FROM books');
+  const existing = new Map(existingRows.map(r => [r.bookId, r]));
 
   const bookRows = new Map<string, Record<string, unknown>>();
   (shelf?.books || []).forEach(b => {
@@ -197,16 +212,37 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<n
   for (const row of bookRows.values()) {
     await db.execute(
       `INSERT OR REPLACE INTO books (bookId, title, author, cover, category, readUpdateTime,
-        finishReading, markedStatus, noteCount, reviewCount, bookmarkCount, readingProgress, sort, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        finishReading, markedStatus, noteCount, reviewCount, bookmarkCount, readingProgress, sort, updatedAt, syncedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [row.bookId, row.title, row.author, row.cover, row.category, row.readUpdateTime,
        row.finishReading, row.markedStatus, row.noteCount, row.reviewCount,
-       row.bookmarkCount, row.readingProgress, row.sort, row.updatedAt],
+       row.bookmarkCount, row.readingProgress, row.sort, row.updatedAt,
+       // 保留原 syncedAt：元数据刷新不能把"已同步完整"标记清掉
+       existing.get(String(row.bookId))?.syncedAt ?? 0],
     );
   }
 
-  // 2. 逐书同步划线/想法/书评（想法/书评按 synckey 翻页拉全，接口每页只有 20 条）
-  const targets = (notebooks.books || []).filter(nb => nb.book?.bookId);
+  // 远端已删除的书（不在书架也不在笔记列表）本地一并清掉
+  const remoteIds = new Set(bookRows.keys());
+  const removedIds = existingRows.map(r => r.bookId).filter(id => !remoteIds.has(id));
+  for (const id of removedIds) {
+    await db.execute('DELETE FROM books WHERE bookId = ?', [id]);
+    await db.execute('DELETE FROM bookmarks WHERE bookId = ?', [id]);
+    await db.execute('DELETE FROM reviews WHERE bookId = ?', [id]);
+    await db.execute('DELETE FROM chapters WHERE bookId = ?', [id]);
+  }
+
+  // 2. 增量同步：仅拉取「新书 / 从未同步过 / 笔记计数或读完状态有变化」的书的明细。
+  // 计数相同但内容被编辑的极端情况会漏更新，由下次计数变化或手动重新同步覆盖。
+  const allNotebookBooks = (notebooks.books || []).filter(nb => nb.book?.bookId);
+  const targets = allNotebookBooks.filter(nb => {
+    const prev = existing.get(nb.bookId);
+    if (!prev || prev.syncedAt === 0) return true;
+    return prev.noteCount !== (nb.noteCount || 0)
+      || prev.reviewCount !== (nb.reviewCount || 0)
+      || prev.bookmarkCount !== (nb.bookmarkCount || 0)
+      || prev.markedStatus !== (nb.markedStatus || 0);
+  });
   let done = 0;
   const failedBooks: typeof targets = [];
   onProgress?.({ done: 0, total: targets.length, phase: 'contents' });
@@ -274,7 +310,7 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<n
     'lastSyncAt',
     String(Math.floor(Date.now() / 1000)),
   ]);
-  return failedBooks.length;
+  return { failedCount: failedBooks.length, changedCount: targets.length, totalCount: allNotebookBooks.length };
 }
 
 async function syncBookContents(
