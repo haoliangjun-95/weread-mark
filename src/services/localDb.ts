@@ -603,7 +603,7 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
        FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
        WHERE ${timeCond.replace(/%s/g, 'bm.createTime')}
        ORDER BY bm.createTime ASC LIMIT ?`,
-      [monthDay, monthDay, thisYear, limit].flat(),
+      [monthDay, thisYear, limit],
     ),
     db.select<{ [k: string]: unknown }[]>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
@@ -611,7 +611,7 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
        FROM reviews r JOIN books b ON b.bookId = r.bookId
        WHERE ${timeCond.replace(/%s/g, 'r.createTime')}
        ORDER BY r.createTime ASC LIMIT ?`,
-      [monthDay, monthDay, thisYear, limit].flat(),
+      [monthDay, thisYear, limit],
     ),
   ]);
 
