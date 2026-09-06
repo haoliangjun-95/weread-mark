@@ -81,6 +81,35 @@ class MissingApiKeyError extends Error {
   }
 }
 
+// ============ 全局并发限制 ============
+// 网关对单 Key 有频控，全量同步/扫描瞬时并发过高会触发 403 限流。
+// 这里用信号量把同时在途的请求数压到上限以下，所有 callApi 共享。
+class ThrottledError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = 'ThrottledError';
+  }
+}
+
+const MAX_CONCURRENT_REQUESTS = 5;
+let activeCount = 0;
+const waitQueue: (() => void)[] = [];
+
+async function acquireSlot(): Promise<void> {
+  if (activeCount < MAX_CONCURRENT_REQUESTS) {
+    activeCount++;
+    return;
+  }
+  await new Promise<void>(resolve => waitQueue.push(resolve));
+  activeCount++;
+}
+
+function releaseSlot(): void {
+  activeCount--;
+  const next = waitQueue.shift();
+  if (next) next();
+}
+
 async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promise<T> {
   const apiKey = getApiKey();
 
@@ -88,6 +117,30 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     throw new MissingApiKeyError();
   }
 
+  // 403/429 是网关频控信号，指数退避后重试
+  const MAX_RETRIES = 2;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise(r => setTimeout(r, 1000 * attempt * attempt));
+    }
+    await acquireSlot();
+    try {
+      const result = await requestOnce<T>(params, apiKey, signal);
+      return result;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const throttled = err instanceof ThrottledError;
+      if (!throttled || attempt === MAX_RETRIES) throw err;
+    } finally {
+      releaseSlot();
+    }
+  }
+  throw lastError;
+}
+
+async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?: AbortSignal): Promise<T> {
   // 15 秒超时，防止个别请求永久挂起拖死整页加载
   const timeoutSignal = AbortSignal.timeout(15000);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
@@ -114,10 +167,27 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
   }
 
   if (!response.ok) {
+    // 尽量读出网关返回的具体原因（errmsg/errlog），便于定位 403/限流问题
+    let detail = '';
+    try {
+      const body = await response.text();
+      try {
+        const parsed = JSON.parse(body) as { errmsg?: string; errcode?: number; errlog?: string };
+        detail = parsed.errmsg ? `${parsed.errmsg}` : body.slice(0, 120);
+      } catch {
+        detail = body.slice(0, 120);
+      }
+    } catch {
+      // ignore
+    }
     if (response.status === 401) {
       clearApiKey();
     }
-    throw new Error(`API 请求失败：HTTP ${response.status} (${params.api_name})`);
+    const message = `API 请求失败：HTTP ${response.status} (${params.api_name})${detail ? `：${detail}` : ''}`;
+    if (response.status === 403 || response.status === 429) {
+      throw new ThrottledError(message);
+    }
+    throw new Error(message);
   }
 
   const data = await response.json();
