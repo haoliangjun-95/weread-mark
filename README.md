@@ -67,7 +67,7 @@ npm run tauri:build
 - 搜索基于 SQLite FTS5 全文索引，输入即出结果，不再逐书在线扫描
 - 每次同步会写入一条阅读统计快照（为后续的趋势类功能积累数据）
 
-数据存储在系统应用数据目录（`~/Library/Application Support/com.haoliangjun.weread-mark/` 等），不上传任何服务器。Web 版行为不变，仍走在线 API。
+数据存储在系统应用数据目录（`~/Library/Application Support/com.haoliangjun.weread-mark/` 等），不上传任何服务器。可在 **设置 → 本地数据同步 → 存储位置** 更改为自定义目录（自动迁移数据、可一键恢复默认）。Web 版行为不变，仍走在线 API。
 
 #### 自动发布
 

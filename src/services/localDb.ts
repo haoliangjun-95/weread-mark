@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
+import { invoke } from '@tauri-apps/api/core';
 import {
   fetchShelf,
   fetchAllNotebooks,
@@ -17,14 +18,37 @@ import type {
 /** 运行时检测 Tauri 环境（tauri dev 不走 tauri mode，不能用 env 判断） */
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-const DB_URL = 'sqlite:weread.db';
+const DB_FILE_NAME = 'weread.db';
+const CUSTOM_DB_DIR_KEY = 'weread-db-dir';
 const SCHEMA_VERSION = 2;
 
 let dbPromise: Promise<Database> | null = null;
 
+/** 自定义存储目录（localStorage 持久化；必须在 load 之前可知，故不能存进库里） */
+function getCustomDbDir(): string | null {
+  try {
+    return localStorage.getItem(CUSTOM_DB_DIR_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 目录 → sqlite 连接串。绝对路径会整体替换插件的默认 App 目录（path_mapper 特性）。
+ *  反斜杠归一为 /，按段 encodeURIComponent 保证中文等非 ASCII 目录名安全（sqlx 侧会解码）。 */
+function toSqliteUrl(dir: string | null): string {
+  if (!dir) return `sqlite:${DB_FILE_NAME}`;
+  const norm = dir.replace(/\\/g, '/').replace(/\/+$/, '');
+  const encoded = norm.split('/').map(seg => encodeURIComponent(seg)).join('/');
+  return `sqlite:/${encoded}/${DB_FILE_NAME}`;
+}
+
+function currentDbUrl(): string {
+  return toSqliteUrl(getCustomDbDir());
+}
+
 function getDb(): Promise<Database> {
   if (!dbPromise) {
-    dbPromise = Database.load(DB_URL).then(async (db) => {
+    dbPromise = Database.load(currentDbUrl()).then(async (db) => {
       await migrate(db);
       return db;
     });
@@ -424,6 +448,72 @@ export async function resetLocalDb(): Promise<void> {
   await db.execute('DELETE FROM reviews');
   await db.execute('DELETE FROM stats_snapshots');
   await db.execute("DELETE FROM sync_meta WHERE key = 'lastSyncAt'");
+}
+
+// ============ 存储目录 ============
+
+export interface DbDirInfo {
+  /** 自定义目录（未设置时为 null，即默认 App 数据目录） */
+  customDir: string | null;
+  /** 默认 App 数据目录绝对路径（Rust 命令提供） */
+  defaultDir: string | null;
+  /** 当前实际使用的数据库文件路径（展示用，编码还原后） */
+  currentPath: string;
+}
+
+export async function getDbDirInfo(): Promise<DbDirInfo> {
+  if (!isTauri) return { customDir: null, defaultDir: null, currentPath: '' };
+  const customDir = getCustomDbDir();
+  const defaultDir = await invoke<string | null>('db_get_default_dir').catch(() => null);
+  const dir = customDir ?? defaultDir;
+  return {
+    customDir,
+    defaultDir,
+    currentPath: dir ? `${dir}/${DB_FILE_NAME}` : DB_FILE_NAME,
+  };
+}
+
+/**
+ * 切换数据库存储目录：关闭旧连接 → 迁移数据库文件到新目录 → 切换并验证加载。
+ * 失败时回滚到原目录并恢复连接。返回是否迁移了既有数据（false = 切到空目录，需重新同步）。
+ */
+export async function changeDbDir(newDir: string | null): Promise<boolean> {
+  const prevDir = getCustomDbDir();
+  if ((prevDir ?? null) === (newDir ?? null)) return true;
+
+  const defaultDir = await invoke<string>('db_get_default_dir');
+  const oldDir = prevDir ?? defaultDir;
+
+  // 关闭旧连接，清掉单例
+  if (dbPromise) {
+    const old = dbPromise;
+    dbPromise = null;
+    await old.then(db => db.close()).catch(() => undefined);
+  }
+
+  const apply = (dir: string | null) => {
+    try {
+      if (dir) localStorage.setItem(CUSTOM_DB_DIR_KEY, dir);
+      else localStorage.removeItem(CUSTOM_DB_DIR_KEY);
+    } catch { /* ignore */ }
+  };
+
+  try {
+    // 迁移既有数据库文件（旧文件保留不删，便于手动回退）
+    const migrated = await invoke<boolean>('db_prepare_and_copy', {
+      srcFile: `${oldDir}/${DB_FILE_NAME}`,
+      dstDir: newDir ?? defaultDir,
+    });
+    apply(newDir);
+    await getDb(); // 验证新位置可加载
+    return migrated;
+  } catch (err) {
+    // 回滚：恢复原目录配置与连接
+    apply(prevDir);
+    dbPromise = null;
+    await getDb().catch(() => undefined);
+    throw err;
+  }
 }
 
 export async function getLastSyncAt(): Promise<number | null> {

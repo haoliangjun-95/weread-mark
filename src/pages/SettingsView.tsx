@@ -3,9 +3,11 @@ import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
-import { syncAll, getLocalStats, getSyncStatus, isTauri } from '../services/localDb';
-import type { SyncProgress, LocalStats } from '../services/localDb';
+import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri } from '../services/localDb';
+import type { SyncProgress, LocalStats, DbDirInfo } from '../services/localDb';
 import { markSynced } from '../services/dataService';
+import { open } from '@tauri-apps/plugin-dialog';
+import type { OpenDialogOptions } from '@tauri-apps/plugin-dialog';
 import { showToast } from '../utils/toast';
 import { useDialogLifecycle } from '../utils/dialog';
 import type { ViewType, ThemeType, FontType, FontSize, ExportStyleType } from '../App';
@@ -185,8 +187,109 @@ function SyncCard() {
         >
           {syncing ? '同步中...' : lastSyncAt ? '重新同步' : '同步到本地'}
         </button>
+
+        <StorageDirSection disabled={syncing} onDone={refreshStatus} />
       </div>
     </section>
+  );
+}
+
+/** 存储位置区块：展示当前数据库路径，支持更改为自定义目录 / 恢复默认（切换时自动迁移数据） */
+function StorageDirSection({ disabled, onDone }: { disabled: boolean; onDone: () => Promise<void> | void }) {
+  const [dirInfo, setDirInfo] = useState<DbDirInfo | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setDirInfo(await getDbDirInfo());
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(refresh);
+  }, [refresh]);
+
+  const pickAndSwitch = async () => {
+    if (switching) return;
+    const selected = await open<OpenDialogOptions>({
+      directory: true,
+      multiple: false,
+      title: '选择数据库存储目录',
+    });
+    if (!selected || typeof selected !== 'string') return;
+    if (dirInfo?.customDir === selected) {
+      showToast('已是当前存储目录', 'info');
+      return;
+    }
+    setSwitching(true);
+    try {
+      const migrated = await changeDbDir(selected);
+      showToast(
+        migrated
+          ? '存储目录已更改，数据已迁移，无需重新同步'
+          : '存储目录已更改（新目录为空，需重新同步数据）',
+        'success',
+      );
+      await refresh();
+      await onDone();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`更改目录失败，已恢复原目录：${msg}`, 'error');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const restoreDefault = async () => {
+    if (switching) return;
+    setSwitching(true);
+    try {
+      const migrated = await changeDbDir(null);
+      showToast(migrated ? '已恢复默认目录，数据已迁移' : '已恢复默认目录', 'success');
+      await refresh();
+      await onDone();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`恢复默认失败：${msg}`, 'error');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  if (!dirInfo) return null;
+
+  return (
+    <div className="rounded-xl border px-3 py-2.5 text-xs" style={subtlePanelStyle}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>存储位置</span>
+        <div className="flex items-center gap-1.5">
+          {dirInfo.customDir && (
+            <button
+              type="button"
+              onClick={restoreDefault}
+              disabled={disabled || switching}
+              className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              恢复默认
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={pickAndSwitch}
+            disabled={disabled || switching}
+            className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+          >
+            {switching ? '迁移中...' : '更改目录'}
+          </button>
+        </div>
+      </div>
+      <p className="mt-1.5 break-all leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        {dirInfo.customDir ? '自定义：' : '默认：'}{dirInfo.currentPath}
+      </p>
+      <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+        更改目录会自动迁移数据库文件；如目标目录已存在本应用数据则直接沿用。
+      </p>
+    </div>
   );
 }
 
