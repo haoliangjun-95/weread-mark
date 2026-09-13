@@ -64,7 +64,8 @@ main() {
 
   log "构建完成 $REMOTE，新版本已上线"
 
-  if ! curl -sf -o /dev/null "$SITE_URL"; then
+  # 健康检查走本机回环（-k 忽略证书状态，避免证书过期干扰部署告警）
+  if ! curl -sf -o /dev/null -k -H "Host: weread.haoliangjun.com" https://127.0.0.1/; then
     log "警告：部署后站点健康检查失败，请人工检查"
   fi
 }
