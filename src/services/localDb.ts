@@ -256,16 +256,22 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     await db.execute('DELETE FROM chapters WHERE bookId = ?', [id]);
   }
 
-  // 2. 增量同步：仅拉取「新书 / 从未同步过 / 笔记计数或读完状态有变化」的书的明细。
-  // 计数相同但内容被编辑的极端情况会漏更新，由下次计数变化或手动重新同步覆盖。
+  // 2. 增量同步：仅拉取「新书 / 从未同步过 / 笔记计数或读完状态有变化 / 本地想法数少于线上」的书的明细。
+  // 最后一个条件是自愈路径：历史版本曾因翻页缺陷只拉到第一页（计数比对不出差异），
+  // 用本地 reviews 实际条数与线上 reviewCount 对账，缺的书自动重拉。
+  const localReviewCounts = new Map(
+    (await db.select<{ bookId: string; c: number }[]>(
+      'SELECT bookId, COUNT(*) as c FROM reviews GROUP BY bookId')).map(r => [r.bookId, r.c]),
+  );
   const allNotebookBooks = (notebooks.books || []).filter(nb => nb.book?.bookId);
   const targets = allNotebookBooks.filter(nb => {
     const prev = existing.get(nb.bookId);
     if (!prev || prev.syncedAt === 0) return true;
-    return prev.noteCount !== (nb.noteCount || 0)
+    if (prev.noteCount !== (nb.noteCount || 0)
       || prev.reviewCount !== (nb.reviewCount || 0)
       || prev.bookmarkCount !== (nb.bookmarkCount || 0)
-      || prev.markedStatus !== (nb.markedStatus || 0);
+      || prev.markedStatus !== (nb.markedStatus || 0)) return true;
+    return (localReviewCounts.get(nb.bookId) || 0) < (nb.reviewCount || 0);
   });
   let done = 0;
   const failedBooks: typeof targets = [];
@@ -277,6 +283,10 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       fetchBookmarks(bookId),
       fetchAllBookReviews(bookId),
     ]);
+    // 完整性校验：拉到的想法/书评数少于线上 reviewCount 视为失败（计数不达标不标 syncedAt）
+    if (allReviews.length < (nb.reviewCount || 0)) {
+      throw new Error(`想法拉取不完整：${allReviews.length}/${nb.reviewCount}`);
+    }
     await syncBookContents(db, bookId, bmData.updated || [], bmData.chapters || [], allReviews);
     // 逐书记录同步完成时间；失败的书保持 0，hasLocalData 据此判断库完整性
     await db.execute('UPDATE books SET syncedAt = ? WHERE bookId = ?', [
