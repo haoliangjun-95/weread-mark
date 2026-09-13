@@ -128,11 +128,12 @@ struct Index {
   build() {
     Column() {
       Web({ src: $rawfile('web/index.html'), controller: this.controller })
-        .javaScriptProxy({
-          object: this.bridge,
-          name: 'HarmonyBridge',
-          methodList: ['dbExecute', 'dbSelect', 'httpPost'],
-          controller: this.controller,
+        .onControllerBound(() => {
+          // 属性式 javaScriptProxy 在引擎预热 + rawfile 场景下注入时机晚于首个页面加载，
+          // 导致 window.HarmonyBridge 缺失（hilog: native proxy object not found）。
+          // onControllerBound 在任何页面加载前触发，注册必然生效。
+          this.controller.registerJavaScriptProxy(this.bridge, 'HarmonyBridge',
+            ['dbExecute', 'dbSelect', 'httpPost']);
         })
         .domStorageAccess(true)
         .databaseAccess(true)
