@@ -34,6 +34,32 @@ npm run dev
 
 > 获取 API Key：前往 [微信读书](https://weread.qq.com/) 获取。
 
+### 移动应用（Capacitor：Android / iOS）
+
+一套 Web 代码打包原生 App，SQLite 本地库、同步、排行榜、往年今天全部可用；导出图片/PDF 走系统分享面板。
+
+```bash
+# 构建 Web 资产并同步进原生工程
+npm run cap:sync
+
+# 打开对应平台的原生工程（Android Studio / Xcode）
+npm run cap:android
+npm run cap:ios
+```
+
+无需本地 Android 环境：推送后可在 GitHub Actions 手动触发 **Android APK** 工作流，产物可直接安装（debug 签名）。
+
+### 鸿蒙应用（HarmonyOS NEXT / ArkWeb）
+
+纯血鸿蒙通过 ArkWeb 壳加载同一套 Web 产物，网络请求（`bridge://` 协议）与 SQLite（relationalStore）经 `window.HarmonyBridge` 原生桥转发，绕过 WebView CORS。
+
+```bash
+# 构建 Web 资产并同步进 rawfile
+npm run build:harmony
+```
+
+随后用 DevEco Studio 打开 `harmony/` 工程构建/运行（File → Project Structure → Signing Configs 自动签名后可真机调试）。HarmonyOS 4.x 及更早版本直接安装 Android APK 即可。
+
 ### 桌面应用（Tauri）
 
 支持打包为 macOS / Windows / Linux 桌面应用，无需浏览器即可使用。
