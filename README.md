@@ -85,15 +85,21 @@ npm run build
 
 构建输出在 `dist/` 目录，资源使用相对路径（`base: './'`），可部署到任意目录。
 
-#### 一键部署到服务器
+#### 自动部署（Git 轮询）
 
-配置好到服务器的 SSH 免密登录后，一条命令完成「同步代码 → 服务器构建 → 线上验证」：
+服务器通过 `scripts/server-deploy.sh` + crontab **每 5 分钟轮询** GitHub `main` 分支，拉到新提交自动 `npm ci + npm run build` 上线。日常发版只需：
 
 ```bash
-./deploy.sh
+git push origin main   # 推送后最多 5 分钟自动上线
 ```
 
-脚本会保留服务器上的 `.env`，只同步源码并在服务器端构建，部署后自动检查站点和 Service Worker 缓存头。
+特性与保障：
+
+- 无新提交时仅做一次 `git fetch` 比对，静默退出，开销可忽略
+- 服务器本地 `.env`（备案号等定制）在每次部署前自动备份恢复，不随代码覆盖
+- 构建失败时保留现有 `dist` 继续服务旧版本，等待下轮重试
+- 部署日志：`/www/wwwlogs/weread-deploy.log`（超 5MB 自动截断）；手动触发：`bash scripts/server-deploy.sh`
+- 服务器初始化（一次性）：crontab 加入 `*/5 * * * * /bin/bash /www/wwwroot/weread-mark/scripts/server-deploy.sh >> /www/wwwlogs/weread-deploy.log 2>&1`
 
 构建产物包含 PWA 支持（Service Worker 预缓存静态资源、运行时缓存书封图），手机浏览器可「添加到主屏幕」当 App 使用，二次访问可离线打开。
 
