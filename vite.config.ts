@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
-    ...(mode !== 'tauri' ? [VitePWA({
+    ...(mode !== 'tauri' && mode !== 'native' && mode !== 'harmony' ? [VitePWA({
       registerType: 'autoUpdate',
       manifest: {
         name: '微痕 — 微信读书数据可视化',

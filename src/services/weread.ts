@@ -38,29 +38,20 @@ export function setApiKey(key: string): void {
 
 export async function validateApiKey(key: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        api_name: '/shelf/sync',
-        skill_version: SKILL_VERSION,
-      }),
-    });
-    if (response.status === 401) {
+    // 保存目标 key 后复用统一的 callApi 通道（限速/桥接/错误处理一份逻辑）
+    const prev = getApiKey();
+    setApiKey(key);
+    try {
+      await callApi<ShelfData>({ api_name: '/shelf/sync' });
+      return { valid: true };
+    } finally {
+      setApiKey(prev);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('401')) {
       return { valid: false, error: '输入的Key错误，请从微信读书官网获取正确的key' };
     }
-    if (!response.ok) {
-      return { valid: false, error: `请求失败: HTTP ${response.status}` };
-    }
-    const data = await response.json();
-    if (data.errcode && data.errcode !== 0) {
-      return { valid: false, error: data.errmsg || 'API Key 无效，请检查后重试' };
-    }
-    return { valid: true };
-  } catch (e) {
     return { valid: false, error: e instanceof Error ? e.message : '网络错误，请检查网络后重试' };
   }
 }
@@ -141,42 +132,68 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
   throw lastError;
 }
 
+/** 鸿蒙 ArkWeb 壳注入的原生 HTTP 桥（绕过 WebView 的 CORS 限制） */
+interface HarmonyHttpBridge {
+  httpPost(path: string, headers: Record<string, string>, body: string): Promise<{ status: number; body: string }>;
+}
+
+type GatewayBody = { errcode?: number; errmsg?: string };
+
 async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?: AbortSignal): Promise<T> {
-  // 15 秒超时，防止个别请求永久挂起拖死整页加载
-  const timeoutSignal = AbortSignal.timeout(15000);
-  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const payload = JSON.stringify({
+    ...params,
+    skill_version: SKILL_VERSION,
+  });
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
 
-  let response: Response;
-  try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...params,
-        skill_version: SKILL_VERSION,
-      }),
-      signal: requestSignal,
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw err;
+  let body: GatewayBody | null = null;
+  let httpStatus = 200;
+
+  if (API_URL.startsWith('bridge://')) {
+    // 鸿蒙：API_URL 形如 bridge://api/agent/gateway，路径由原生桥拼到真实网关
+    const bridge = (window as unknown as { HarmonyBridge?: HarmonyHttpBridge }).HarmonyBridge;
+    if (!bridge?.httpPost) {
+      throw new Error('鸿蒙原生桥未注入（请在 App 内打开，而非浏览器）');
     }
-    throw new Error(`网络请求失败（${params.api_name}），请检查网络连接后重试`, { cause: err });
-  }
-
-  type GatewayBody = { errcode?: number; errmsg?: string };
-  let body: GatewayBody | null;
-  if (response.ok) {
-    body = (await response.json()) as GatewayBody;
-  } else {
-    // 非 2xx 也尽量解析响应体，网关频控错误在 HTTP 403 的 body 里（errcode -2014）
+    const res = await bridge.httpPost(API_URL.slice('bridge://'.length), headers, payload);
+    httpStatus = res.status;
     try {
-      body = (await response.clone().json()) as GatewayBody;
+      body = JSON.parse(res.body) as GatewayBody;
     } catch {
       body = null;
+    }
+  } else {
+    // 15 秒超时，防止个别请求永久挂起拖死整页加载
+    const timeoutSignal = AbortSignal.timeout(15000);
+    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+    let response: Response;
+    try {
+      response = await fetch(API_URL, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal: requestSignal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw err;
+      }
+      throw new Error(`网络请求失败（${params.api_name}），请检查网络连接后重试`, { cause: err });
+    }
+    httpStatus = response.status;
+    if (response.ok) {
+      body = (await response.json()) as GatewayBody;
+    } else {
+      // 非 2xx 也尽量解析响应体，网关频控错误在 HTTP 403 的 body 里（errcode -2014）
+      try {
+        body = (await response.clone().json()) as GatewayBody;
+      } catch {
+        body = null;
+      }
     }
   }
   if (body && body.errcode && body.errcode !== 0) {
@@ -187,12 +204,12 @@ async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?:
     throw new Error(message);
   }
 
-  if (!response.ok) {
-    if (response.status === 401) {
+  if (httpStatus < 200 || httpStatus >= 300) {
+    if (httpStatus === 401) {
       clearApiKey();
     }
-    const message = `API 请求失败：HTTP ${response.status} (${params.api_name})`;
-    if (response.status === 403 || response.status === 429) {
+    const message = `API 请求失败：HTTP ${httpStatus} (${params.api_name})`;
+    if (httpStatus === 403 || httpStatus === 429) {
       throw new ThrottledError(message);
     }
     throw new Error(message);
