@@ -55,10 +55,12 @@ main() {
 
   if ! npm ci --no-audit --no-fund; then
     log "npm ci 失败，保留现有 dist 继续服务，等待下轮重试"
+    /usr/local/bin/feishu-notify.sh "⚠️ weread 部署失败：npm ci 出错，已保留旧版本" || true
     exit 1
   fi
   if ! npm run build; then
     log "构建失败，保留现有 dist 继续服务，等待下轮重试"
+    /usr/local/bin/feishu-notify.sh "⚠️ weread 部署失败：构建出错，已保留旧版本" || true
     exit 1
   fi
 
@@ -67,6 +69,9 @@ main() {
   # 健康检查走本机回环（-k 忽略证书状态，避免证书过期干扰部署告警）
   if ! curl -sf -o /dev/null -k -H "Host: weread.haoliangjun.com" https://127.0.0.1/; then
     log "警告：部署后站点健康检查失败，请人工检查"
+    /usr/local/bin/feishu-notify.sh "⚠️ weread 已部署 ${REMOTE:0:7} 但健康检查失败，请人工检查" || true
+  else
+    /usr/local/bin/feishu-notify.sh "✅ weread 已部署 ${REMOTE:0:7}，站点正常" || true
   fi
 }
 
