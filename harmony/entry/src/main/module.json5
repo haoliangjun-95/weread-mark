@@ -45,9 +45,11 @@
           }
         ],
       }
+    ],
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
     ]
-  },
-  "requestPermissions": [
-    { "name": "ohos.permission.INTERNET" }
-  ]
+  }
 }

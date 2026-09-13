@@ -803,7 +803,7 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
       book: toBook(r),
     })),
     ...rvHits.map(r => ({
-      kind: (r.type === 4 ? 'review' : 'thought') as 'review' | 'thought',
+      kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
       content: String(r.content || ''),
       htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
       createTime: Number(r.createTime || 0),

@@ -4,6 +4,15 @@ import { http } from '@kit.NetworkKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
+/** 单元格值：RDB 无列类型元数据，统一按文本返回，前端用 Number()/String() 显式转换 */
+type CellValue = string | null;
+
+/** 原生 httpPost 的返回结构（ArkTS 要求对象字面量对应显式类型） */
+interface HttpResult {
+  status: number;
+  body: string;
+}
+
 /**
  * 注入给 WebView 的原生桥（window.HarmonyBridge）：
  * - dbExecute / dbSelect：relationalStore(SQLite) 数据库桥
@@ -33,37 +42,30 @@ class HarmonyBridge {
     return this.store;
   }
 
-  /** 执行写语句（DDL/DML），返回受影响行数 */
+  /** 执行写语句（DDL/DML）。executeSql 无受影响行数返回，恒返回 0（前端未使用返回值） */
   async dbExecute(sql: string, params?: Array<relationalStore.ValueType>): Promise<number> {
     try {
       const store = await this.getStore();
-      const rows = await store.executeSql(sql, params ?? []);
-      return rows;
+      await store.executeSql(sql, params ?? []);
+      return 0;
     } catch (e) {
       const err = e as BusinessError;
       throw new Error(`dbExecute 失败: ${err.message} SQL: ${sql.slice(0, 80)}`);
     }
   }
 
-  /** 查询语句，返回行对象数组 */
-  async dbSelect(sql: string, params?: Array<relationalStore.ValueType>): Promise<Array<Record<string, Object>>> {
+  /** 查询语句，返回行对象数组（值统一为字符串或 null，前端显式转换类型） */
+  async dbSelect(sql: string, params?: Array<relationalStore.ValueType>): Promise<Array<Record<string, CellValue>>> {
     try {
       const store = await this.getStore();
       const resultSet = await store.querySql(sql, params ?? []);
-      const rows: Array<Record<string, Object>> = [];
+      const rows: Array<Record<string, CellValue>> = [];
       while (resultSet.goToNextRow()) {
-        const row: Record<string, Object> = {};
+        const row: Record<string, CellValue> = {};
         for (let i = 0; i < resultSet.columnCount; i++) {
           const name = resultSet.getColumnName(i);
-          const type = resultSet.getColumnType(i);
-          if (type === relationalStore.ColumnType.TYPE_NULL) {
+          if (resultSet.isColumnNull(i)) {
             row[name] = null;
-          } else if (type === relationalStore.ColumnType.TYPE_INTEGER) {
-            row[name] = resultSet.getLong(i);
-          } else if (type === relationalStore.ColumnType.TYPE_FLOAT) {
-            row[name] = resultSet.getDouble(i);
-          } else if (type === relationalStore.ColumnType.TYPE_BLOB) {
-            row[name] = resultSet.getBlob(i);
           } else {
             row[name] = resultSet.getString(i);
           }
@@ -79,22 +81,23 @@ class HarmonyBridge {
   }
 
   /** 原生 POST 转发到微信读书网关（WebView 内 fetch 有 CORS 限制） */
-  async httpPost(path: string, headers: Record<string, string>, body: string): Promise<Record<string, Object>> {
+  async httpPost(path: string, headers: Record<string, string>, body: string): Promise<HttpResult> {
     const realUrl = `https://i.weread.qq.com/${path}`;
     const client = http.createHttp();
     try {
       const resp = await client.request(realUrl, {
         method: http.RequestMethod.POST,
-        header: headers as Record<string, Object>,
+        header: headers,
         extraData: body,
         expectDataType: http.HttpDataType.STRING,
         connectTimeout: 15000,
         readTimeout: 15000,
       });
-      return {
+      const result: HttpResult = {
         status: resp.responseCode,
         body: typeof resp.result === 'string' ? resp.result : '',
       };
+      return result;
     } finally {
       client.destroy();
     }
