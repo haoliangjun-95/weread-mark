@@ -388,28 +388,56 @@ export async function fetchBookmarks(bookId: string, signal?: AbortSignal): Prom
 }
 
 // Reviews API
-export async function fetchBookReviews(bookId: string, synckey = 0, signal?: AbortSignal): Promise<ReviewsData> {
+export async function fetchBookReviews(
+  bookId: string,
+  synckey = 0,
+  count = 100,
+  signal?: AbortSignal
+): Promise<ReviewsData> {
   return callApi<ReviewsData>({
     api_name: '/review/list/mine',
     bookid: bookId,
     synckey,
-    count: 20,
+    count,
   }, signal);
 }
 
-/** 拉全单本书的想法+书评：接口每页 20 条，按返回的 synckey 翻页直到 hasMore 为 0 */
+/**
+ * 拉全单本书的想法+书评。
+ * 注意：该接口的 synckey 实际是「增量同步 key」而非页码游标——把回包 synckey 传回去
+ * 只会得到比它更新的内容（通常为空），按页翻会永远只拿到第一页（实测 70 本书卡在 20 条）。
+ * 正确策略：一次请求用大 count 拉尽量多；若仍有缺口且 hasMore=1，再用 synckey 补拉增量。
+ * 以回包 totalCount 做完整性校验，reviewId 去重防死循环。
+ */
 export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal): Promise<ReviewItem[]> {
-  const all: ReviewItem[] = [];
+  const PAGE_SIZE = 100;
+  const all = new Map<string, ReviewItem>();
   let synckey = 0;
-  const MAX_PAGES = 100; // 防御上限：单本书最多 2000 条
-  for (let i = 0; i < MAX_PAGES; i++) {
-    const data = await fetchBookReviews(bookId, synckey, signal);
+  let total = Number.POSITIVE_INFINITY;
+  const MAX_ROUNDS = 30; // 防御上限
+
+  for (let i = 0; i < MAX_ROUNDS; i++) {
+    const data = await fetchBookReviews(bookId, synckey, PAGE_SIZE, signal);
+    if (data.totalCount != null && data.totalCount > 0) total = data.totalCount;
     const reviews = data.reviews || [];
     if (reviews.length === 0) break;
-    all.push(...reviews);
+
+    let newCount = 0;
+    for (const rv of reviews) {
+      if (rv.review?.reviewId && !all.has(rv.review.reviewId)) {
+        all.set(rv.review.reviewId, rv);
+        newCount++;
+      }
+    }
     if (!data.hasMore) break;
-    if (data.synckey === synckey) break; // synckey 不再前进，防死循环
+    if (newCount === 0) break;            // 本页全是重复内容，已到尽头
+    if (all.size >= total) break;          // 已收集够 totalCount 条
+    if (data.synckey == null || data.synckey === synckey) break; // 游标停滞
     synckey = data.synckey;
   }
-  return all;
+
+  if (all.size < total) {
+    console.warn(`[fetchAllBookReviews] ${bookId} 可能不完整：${all.size}/${total}（count 上限或游标停滞）`);
+  }
+  return [...all.values()];
 }
