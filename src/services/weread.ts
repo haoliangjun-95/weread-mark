@@ -149,8 +149,8 @@ async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?:
     'Content-Type': 'application/json',
   };
 
-  let body: GatewayBody | null = null;
-  let httpStatus = 200;
+  let body: GatewayBody | null;
+  let httpStatus: number;
 
   if (API_URL.startsWith('bridge://')) {
     // 鸿蒙：API_URL 形如 bridge://api/agent/gateway，路径由原生桥拼到真实网关
