@@ -764,9 +764,10 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
   const db = await getDb();
   const now = new Date();
   const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const thisYear = String(now.getFullYear());
-  // unixepoch 默认按 UTC 解析，加 localtime 修正为本地时区（ createTime 是北京时间语境下的记录）
-  const timeCond = `strftime('%m-%d', %s, 'unixepoch', 'localtime') = ? AND strftime('%Y', %s, 'unixepoch', 'localtime') < ?`;
+  // SQL 只做年份粗筛（今年元旦之前的全部记录），月日匹配放 JS 端——
+  // 避免 strftime 的 'localtime' 修饰符在各端 SQLite 编译选项下的兼容差异（华为 RDB 曾静默失败）
+  const thisYearStart = Math.floor(new Date(now.getFullYear(), 0, 1).getTime() / 1000);
+  const scanLimit = 5000; // 粗筛扫描上限
 
   const toBook = (r: { [k: string]: unknown }): BookItem => ({
     bookId: String(r.bookId), title: String(r.title || ''), author: String(r.author || ''),
@@ -775,44 +776,53 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
     updateTime: Number(r.readUpdateTime || 0), isTop: 0, secret: 0,
   });
 
+  const isOnThisDay = (ts: number): boolean => {
+    const d = new Date(ts * 1000);
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === monthDay;
+  };
+
   const [bmHits, rvHits] = await Promise.all([
     db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               bm.bookmarkId, bm.markText, bm.createTime
        FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
-       WHERE ${timeCond.replace(/%s/g, 'bm.createTime')}
-       ORDER BY bm.createTime ASC LIMIT ?`,
-      [monthDay, thisYear, limit],
+       WHERE bm.createTime < ?
+       ORDER BY bm.createTime DESC LIMIT ?`,
+      [thisYearStart, scanLimit],
     ),
     db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               r.reviewId, r.content, r.htmlContent, r.createTime, r.type
        FROM reviews r JOIN books b ON b.bookId = r.bookId
-       WHERE ${timeCond.replace(/%s/g, 'r.createTime')}
-       ORDER BY r.createTime ASC LIMIT ?`,
-      [monthDay, thisYear, limit],
+       WHERE r.createTime < ?
+       ORDER BY r.createTime DESC LIMIT ?`,
+      [thisYearStart, scanLimit],
     ),
   ]);
 
   const items: OnThisDayItem[] = [
-    ...bmHits.map(r => ({
-      kind: 'highlight' as const,
-      content: String(r.markText || ''),
-      createTime: Number(r.createTime || 0),
-      targetId: String(r.bookmarkId),
-      book: toBook(r),
-    })),
-    ...rvHits.map(r => ({
-      kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
-      content: String(r.content || ''),
-      htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
-      createTime: Number(r.createTime || 0),
-      targetId: String(r.reviewId),
-      book: toBook(r),
-    })),
+    ...bmHits
+      .filter(r => isOnThisDay(Number(r.createTime || 0)))
+      .map(r => ({
+        kind: 'highlight' as const,
+        content: String(r.markText || ''),
+        createTime: Number(r.createTime || 0),
+        targetId: String(r.bookmarkId),
+        book: toBook(r),
+      })),
+    ...rvHits
+      .filter(r => isOnThisDay(Number(r.createTime || 0)))
+      .map(r => ({
+        kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
+        content: String(r.content || ''),
+        htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+        createTime: Number(r.createTime || 0),
+        targetId: String(r.reviewId),
+        book: toBook(r),
+      })),
   ];
   items.sort((a, b) => b.createTime - a.createTime);
-  return items;
+  return items.slice(0, limit);
 }
 
 /** 本地查询某本书是否含书评（type=4），用于书架卡片 ⭐ 徽章 */
