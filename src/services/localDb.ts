@@ -5,7 +5,7 @@ import {
   fetchAllBookReviews,
   fetchReadingStats,
 } from './weread';
-import { isTauri, isCapacitor } from './dbInterface';
+import { isTauri, isCapacitor, isHarmony } from './dbInterface';
 import type {
   BookItem,
   NotebookItem,
@@ -14,10 +14,10 @@ import type {
   ReviewItem,
 } from '../types/weread';
 
-export { isTauri, isCapacitor };
+export { isTauri, isCapacitor, isHarmony };
 
-/** localDb 仅在原生环境可用（tauri 桌面 / capacitor 移动） */
-const isNativeDb = isTauri || isCapacitor;
+/** localDb 仅在原生环境可用（tauri 桌面 / capacitor 移动 / harmony 鸿蒙） */
+const isNativeDb = isTauri || isCapacitor || isHarmony;
 
 const DB_FILE_NAME = 'weread.db';
 const DB_CONN_NAME = 'weread';
@@ -98,9 +98,27 @@ async function openCapacitorDb(): Promise<DbConnection> {
   };
 }
 
+/** 鸿蒙实现：ArkTS 侧 registerJavaScriptProxy 注入的原生桥，底层是 relationalStore */
+interface HarmonyDbBridge {
+  dbExecute(sql: string, params?: unknown[]): Promise<unknown>;
+  dbSelect(sql: string, params?: unknown[]): Promise<unknown[]>;
+}
+
+async function openHarmonyDb(): Promise<DbConnection> {
+  const bridge = (window as unknown as { HarmonyBridge: HarmonyDbBridge }).HarmonyBridge;
+  if (!bridge?.dbExecute || !bridge?.dbSelect) {
+    throw new Error('鸿蒙数据库桥未注入');
+  }
+  return {
+    execute: (q, p) => bridge.dbExecute(q, p),
+    select: <T,>(q: string, p?: unknown[]) => bridge.dbSelect(q, p) as Promise<T[]>,
+  };
+}
+
 function getDb(): Promise<DbConnection> {
   if (!dbPromise) {
-    dbPromise = (isTauri ? openTauriDb() : openCapacitorDb()).then(async (db) => {
+    const opener = isTauri ? openTauriDb() : isCapacitor ? openCapacitorDb() : openHarmonyDb();
+    dbPromise = opener.then(async (db) => {
       await migrate(db);
       return db;
     });
@@ -465,7 +483,7 @@ function rowToNotebookItem(row: BookRow): NotebookItem {
 }
 
 export async function hasLocalData(): Promise<boolean> {
-  if (!isTauri) return false;
+  if (!isNativeDb) return false;
   try {
     const db = await getDb();
     const rows = await db.select<{ value: string }>(
@@ -484,7 +502,7 @@ export async function hasLocalData(): Promise<boolean> {
 
 /** 同步状态：上次同步时间与未同步完成的笔记书数量（用于设置页提示） */
 export async function getSyncStatus(): Promise<{ lastSyncAt: number | null; missingCount: number }> {
-  if (!isTauri) return { lastSyncAt: null, missingCount: 0 };
+  if (!isNativeDb) return { lastSyncAt: null, missingCount: 0 };
   try {
     const db = await getDb();
     const [rows, missing] = await Promise.all([
@@ -588,7 +606,7 @@ export async function changeDbDir(newDir: string | null): Promise<boolean> {
 }
 
 export async function getLastSyncAt(): Promise<number | null> {
-  if (!isTauri) return null;
+  if (!isNativeDb) return null;
   try {
     const db = await getDb();
     const rows = await db.select<{ value: string }>(
@@ -608,7 +626,7 @@ export interface LocalStats {
 }
 
 export async function getLocalStats(): Promise<LocalStats | null> {
-  if (!isTauri) return null;
+  if (!isNativeDb) return null;
   try {
     const db = await getDb();
     const [books, bms, rvs] = await Promise.all([
