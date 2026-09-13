@@ -38,7 +38,12 @@ class HarmonyBridge {
       name: 'weread.db',
       securityLevel: relationalStore.SecurityLevel.S1,
     };
-    this.store = await relationalStore.getRdbStore(this.context, config);
+    try {
+      this.store = await relationalStore.getRdbStore(this.context, config);
+    } catch (e) {
+      const err = e as BusinessError;
+      throw new Error(`getRdbStore 失败: ${err.message}`);
+    }
     return this.store;
   }
 
@@ -98,6 +103,9 @@ class HarmonyBridge {
         body: typeof resp.result === 'string' ? resp.result : '',
       };
       return result;
+    } catch (e) {
+      const err = e as BusinessError;
+      throw new Error(`httpPost 失败: ${err.message} URL: ${realUrl}`);
     } finally {
       client.destroy();
     }
@@ -135,6 +143,20 @@ struct Index {
           if (event) {
             console.error(`[ArkWeb] 加载错误: ${event.error.getErrorInfo()}`);
           }
+        })
+        .onConsole((event) => {
+          if (event) {
+            const msg = `[H5 Console] ${event.message.getMessageLevel()}: ${event.message.getMessage()}`;
+            if (event.message.getMessageLevel() === MessageLevel.Error) {
+              console.error(msg);
+            } else {
+              console.info(msg);
+            }
+          }
+          return false;
+        })
+        .onPageEnd(() => {
+          console.info('[ArkWeb] 页面加载完成');
         })
         .width('100%')
         .height('100%')

@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'src-tauri/target', 'android', 'ios', 'harmony/oh_modules', 'harmony/.hvigor', 'harmony/entry/build']),
+  globalIgnores(['dist', 'src-tauri/target', 'android', 'ios', 'harmony/oh_modules', 'harmony/.hvigor', 'harmony/entry/build', 'harmony/entry/.preview', 'harmony/oh_modules_test']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

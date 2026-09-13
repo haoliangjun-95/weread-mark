@@ -3,7 +3,7 @@ import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
-import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri } from '../services/localDb';
+import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri, isHarmony } from '../services/localDb';
 import type { SyncProgress, LocalStats, DbDirInfo } from '../services/localDb';
 import { markSynced } from '../services/dataService';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -395,7 +395,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                   <p className="text-sm" style={{ color: 'var(--text-primary)' }}>感谢微信读书团队让有趣的灵魂在茫茫人海中相遇！</p>
                 </div>
               </div>
-              <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border-light)' }}>
+              <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border-light)' }} hidden={isHarmony}>
                 <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>扫码加作者反馈意见</p>
                 <div className="flex gap-4">
                   <div className="flex-1 text-center">

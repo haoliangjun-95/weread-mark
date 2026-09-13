@@ -1,5 +1,5 @@
 import type { ViewType } from '../App';
-import { isTauri } from '../services/localDb';
+import { isTauri, isHarmony } from '../services/localDb';
 import logo from '../assets/logo.png';
 
 interface HeaderProps {
@@ -30,7 +30,7 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
             <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 border-b" style={{ borderColor: 'var(--border-light)' }}>
                 <div className="flex items-center justify-between gap-2 h-14 sm:h-16">
                     <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
-                        <img src={logo} alt="微痕" className="h-7 sm:h-8 w-auto flex-shrink-0" />
+                        {!isHarmony && <img src={logo} alt="微痕" className="h-7 sm:h-8 w-auto flex-shrink-0" />}
                         <h1 className="text-sm sm:text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
                             微痕
                         </h1>
