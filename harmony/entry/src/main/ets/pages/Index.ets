@@ -131,7 +131,6 @@ struct Index {
         .fileAccess(true)
         .mixedMode(MixedMode.All)
         .zoomAccess(false)
-        .multiWindowAccess(false)
         .onErrorReceive((event) => {
           if (event) {
             console.error(`[ArkWeb] 加载错误: ${event.error.getErrorInfo()}`);
