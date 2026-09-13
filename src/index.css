@@ -6,6 +6,16 @@ html {
   font-size: var(--font-size-base, 16px);
 }
 
+/* 移动 App 安全区（刘海/手势条）：Header 顶部与主内容底部留出 inset */
+@supports (padding: env(safe-area-inset-top)) {
+  header.sticky {
+    padding-top: env(safe-area-inset-top);
+  }
+  main {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 /* ========== 默认主题（清新蓝白） ========== */
 :root,
 .theme-default {

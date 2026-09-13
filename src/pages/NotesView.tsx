@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/weread';
 import { fetchBookmarks, fetchAllBookReviews } from '../services/weread';
 import { getNotebooks, getBookDetail } from '../services/dataService';
+import { isCapacitor } from '../services/dbInterface';
+import { printOrShareHtml } from '../utils/share';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
@@ -177,17 +179,23 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </body>
 </html>`;
 
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
-      iframe.src = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-      document.body.appendChild(iframe);
-      const cleanup = () => {
-        URL.revokeObjectURL(iframe.src);
-        if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      };
-      iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
-      setTimeout(cleanup, 600000);
-      showToast('已生成，正在打开打印窗口', 'success');
+      // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
+      if (isCapacitor) {
+        await printOrShareHtml(html, `${bookTitle}-笔记成书.html`);
+        showToast('已生成，请选择保存或分享', 'success');
+      } else {
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
+        iframe.src = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        document.body.appendChild(iframe);
+        const cleanup = () => {
+          URL.revokeObjectURL(iframe.src);
+          if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        };
+        iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
+        setTimeout(cleanup, 600000);
+        showToast('已生成，正在打开打印窗口', 'success');
+      }
     } catch (err) {
       console.error('笔记成书失败：', err);
       showToast(`笔记成书失败：${err instanceof Error ? err.message : '请重试'}`, 'error');
@@ -645,20 +653,26 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </body>
 </html>`;
 
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
-      iframe.src = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-      document.body.appendChild(iframe);
+      // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
+      if (isCapacitor) {
+        await printOrShareHtml(html, `${book.title}-笔记成书.html`);
+        showToast('已生成，请选择保存或分享', 'success');
+      } else {
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
+        iframe.src = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        document.body.appendChild(iframe);
 
-      const cleanup = () => {
-        URL.revokeObjectURL(iframe.src);
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
-        }
-      };
-      iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
-      setTimeout(cleanup, 600000);
-      showToast('已生成，正在打开打印窗口', 'success');
+        const cleanup = () => {
+          URL.revokeObjectURL(iframe.src);
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        };
+        iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true });
+        setTimeout(cleanup, 600000);
+        showToast('已生成，正在打开打印窗口', 'success');
+      }
     } catch (err) {
       console.error('笔记成书失败：', err);
       showToast(`笔记成书失败：${err instanceof Error ? err.message : '请重试'}`, 'error');

@@ -1,4 +1,5 @@
 import domtoimage from 'dom-to-image-more';
+import { saveOrShareDataUrl } from './share';
 import type { ExportStyleType } from '../App';
 
 interface ThoughtEntry {
@@ -272,10 +273,9 @@ export async function exportItemToImage(data: ExportImageData) {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(2, 2);
     ctx.drawImage(img, 0, 0);
-    const link = document.createElement('a');
-    link.download = `${data.bookTitle}-笔记-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    const dataUrl = canvas.toDataURL('image/png');
+    // Web/桌面走下载；移动 App 调起系统分享面板
+    await saveOrShareDataUrl(dataUrl, `${data.bookTitle}-笔记-${Date.now()}.png`);
   } finally {
     document.body.removeChild(wrapper);
   }
