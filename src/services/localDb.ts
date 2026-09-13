@@ -5,7 +5,7 @@ import {
   fetchAllBookReviews,
   fetchReadingStats,
 } from './weread';
-import { isTauri, isCapacitor, isHarmony } from './dbInterface';
+import { isTauri, isCapacitor, isHarmony, isNativeApp } from './dbInterface';
 import type {
   BookItem,
   NotebookItem,
@@ -14,7 +14,7 @@ import type {
   ReviewItem,
 } from '../types/weread';
 
-export { isTauri, isCapacitor, isHarmony };
+export { isTauri, isCapacitor, isHarmony, isNativeApp };
 
 /** localDb 仅在原生环境可用（tauri 桌面 / capacitor 移动 / harmony 鸿蒙） */
 const isNativeDb = isTauri || isCapacitor || isHarmony;

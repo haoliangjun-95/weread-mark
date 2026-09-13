@@ -1,5 +1,5 @@
 import type { ViewType } from '../App';
-import { isTauri, isHarmony } from '../services/localDb';
+import { isHarmony, isNativeApp } from '../services/localDb';
 import logo from '../assets/logo.png';
 
 interface HeaderProps {
@@ -19,7 +19,7 @@ const allNavItems: { key: ViewType; label: string; icon: string }[] = [
 ];
 
 // 排行榜依赖本地 SQLite 数据，仅在桌面版展示
-const navItems = isTauri ? allNavItems : allNavItems.filter(item => item.key !== 'rank');
+const navItems = isNativeApp ? allNavItems : allNavItems.filter(item => item.key !== 'rank');
 
 export default function Header({ currentView, onNavigate, hasKey }: HeaderProps) {
     return (

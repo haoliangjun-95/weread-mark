@@ -3,7 +3,7 @@ import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
-import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri, isHarmony } from '../services/localDb';
+import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri, isHarmony, isNativeApp } from '../services/localDb';
 import type { SyncProgress, LocalStats, DbDirInfo } from '../services/localDb';
 import { markSynced } from '../services/dataService';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -260,35 +260,40 @@ function StorageDirSection({ disabled, onDone }: { disabled: boolean; onDone: ()
     <div className="rounded-xl border px-3 py-2.5 text-xs" style={subtlePanelStyle}>
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>存储位置</span>
-        <div className="flex items-center gap-1.5">
-          {dirInfo.customDir && (
+        {/* 目录自定义仅桌面支持（移动端应用沙盒不允许任意目录） */}
+        {isTauri && (
+          <div className="flex items-center gap-1.5">
+            {dirInfo.customDir && (
+              <button
+                type="button"
+                onClick={restoreDefault}
+                disabled={disabled || switching}
+                className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
+                style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+              >
+                恢复默认
+              </button>
+            )}
             <button
               type="button"
-              onClick={restoreDefault}
+              onClick={pickAndSwitch}
               disabled={disabled || switching}
               className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
             >
-              恢复默认
+              {switching ? '迁移中...' : '更改目录'}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={pickAndSwitch}
-            disabled={disabled || switching}
-            className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
-            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
-          >
-            {switching ? '迁移中...' : '更改目录'}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
       <p className="mt-1.5 break-all leading-relaxed" style={{ color: 'var(--text-muted)' }}>
         {dirInfo.customDir ? '自定义：' : '默认：'}{dirInfo.currentPath}
       </p>
-      <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
-        更改目录会自动迁移数据库文件；如目标目录已存在本应用数据则直接沿用。
-      </p>
+      {isTauri && (
+        <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+          更改目录会自动迁移数据库文件；如目标目录已存在本应用数据则直接沿用。
+        </p>
+      )}
     </div>
   );
 }
@@ -357,7 +362,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
       {/* 移动端：API 配置置顶 */}
       <div className="lg:hidden mb-6">
         <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
-        {isTauri && (
+        {isNativeApp && (
           <div className="mt-5">
             <SyncCard />
           </div>
@@ -371,7 +376,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
             <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
           </div>
 
-          {isTauri && <SyncCard />}
+          {isNativeApp && <SyncCard />}
 
           <section className="rounded-2xl border p-5" style={cardStyle}>
             <SectionTitle title="关于微痕" desc="让阅读留下温柔的痕迹" />
