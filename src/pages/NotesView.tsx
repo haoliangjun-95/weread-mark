@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/weread';
-import { fetchAllNotebooks, fetchBookmarks, fetchBookReviews } from '../services/weread';
+import { fetchBookmarks, fetchAllBookReviews } from '../services/weread';
+import { getNotebooks, getBookDetail } from '../services/dataService';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
@@ -9,6 +10,7 @@ import type { HighlightTarget } from '../App';
 import { exportItemToImage } from '../utils/exportImage';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { showToast } from '../utils/toast';
+import { sanitizeRichText, richTextToPlain } from '../utils/sanitize';
 import type { ExportStyleType } from '../App';
 import exportImg from '../assets/export-img.png';
 import exportPdf from '../assets/export-pdf.png';
@@ -37,8 +39,8 @@ export default function NotesView(props: NotesViewProps) {
   const loadNotebooks = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchAllNotebooks();
-      setNotebooks(data.books || []);
+      const books = await getNotebooks();
+      setNotebooks(books);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notebooks');
@@ -62,13 +64,13 @@ export default function NotesView(props: NotesViewProps) {
     if (exportingBookIds.has(bookId)) return;
     setExportingBookIds(prev => new Set(prev).add(bookId));
     try {
-      const [bmData, rvData] = await Promise.all([
+      const [bmData, allReviews] = await Promise.all([
         fetchBookmarks(bookId),
-        fetchBookReviews(bookId),
+        fetchAllBookReviews(bookId),
       ]);
       const bookmarks = bmData.updated || [];
       const chapters = bmData.chapters || [];
-      const reviews: ReviewItem[] = rvData.reviews || [];
+      const reviews: ReviewItem[] = allReviews;
 
       const bookReviews = reviews.filter(r => r.review.type === 4);
       const nonReviewThoughts = reviews.filter(r => r.review.type !== 4);
@@ -136,7 +138,7 @@ ${rv.review.chapterName ? `<div class="chapter">${rv.review.chapterName}</div>` 
       sortedReviews.forEach((rv, idx) => {
         const stars = Math.max(0, Math.min(5, Math.round((rv.review.star ?? 0) / 20)));
         const content = rv.review.htmlContent
-          ? rv.review.htmlContent.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son\w+\s*=\s*"[^"]*"/gi, '').replace(/javascript:/gi, '')
+          ? sanitizeRichText(rv.review.htmlContent)
           : (rv.review.content || '');
         reviewsHtml += `<div class="item">
 <div class="label">书评 ${idx + 1}</div>
@@ -357,13 +359,12 @@ function BookNotesDetail({ book, onBack, highlightTarget, exportStyle, backLabel
     try {
       setLoading(true);
       setDetailError(null);
-      const [bmData, rvData] = await Promise.all([
-        fetchBookmarks(book.bookId),
-        fetchBookReviews(book.bookId),
-      ]);
-      setBookmarks(bmData.updated || []);
-      setChapters(bmData.chapters || []);
-      setReviews(rvData.reviews || []);
+      const detail = await getBookDetail(book.bookId);
+      if (detail) {
+        setBookmarks(detail.bookmarks);
+        setChapters(detail.chapters);
+        setReviews(detail.reviews);
+      }
     } catch (err) {
       console.error('加载书籍详情失败：', err);
       setDetailError(err instanceof Error ? err.message : '加载笔记详情失败');
@@ -478,10 +479,7 @@ ${rv.review.chapterName ? `<div class="chapter">${rv.review.chapterName}</div>` 
       sortedReviews.forEach((rv, idx) => {
         const stars = Math.max(0, Math.min(5, Math.round((rv.review.star ?? 0) / 20)));
         const content = rv.review.htmlContent
-          ? rv.review.htmlContent
-              .replace(/<script[\s\S]*?<\/script>/gi, '')
-              .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-              .replace(/javascript:/gi, '')
+          ? sanitizeRichText(rv.review.htmlContent)
           : (rv.review.content || '');
         reviewsHtml += `<div class="item">
 <div class="label">书评 ${idx + 1}</div>
@@ -745,19 +743,12 @@ interface NotesContentProps {
 }
 
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript:/gi, '');
+  return sanitizeRichText(html);
 }
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.innerText || tmp.textContent || '';
+  // DOMParser 文档不加载子资源，避免 innerHTML 触发 img onerror 等副作用
+  return richTextToPlain(html);
 }
 
 async function copyToClipboard(text: string) {
@@ -973,7 +964,8 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                     ))}
                   </div>
                 )}
-                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                {/* 触屏设备常显；桌面 hover 或键盘聚焦子按钮时显示 */}
+                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-200">
                   <button
                     onClick={async () => {
                       let textToCopy = `${bookmark.markText || ''}`;

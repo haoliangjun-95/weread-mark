@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import type { BookItem } from '../types/weread';
+import type { HighlightTarget } from '../App';
+import OnThisDayCard from '../components/OnThisDayCard';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -32,9 +35,10 @@ type TimeMode = 'weekly' | 'monthly' | 'annually' | 'overall';
 
 interface DashboardProps {
   hasKey: boolean;
+  onSelectBook?: (book: BookItem, target?: HighlightTarget) => void;
 }
 
-export default function Dashboard({ hasKey }: DashboardProps) {
+export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
   const [finishedCount, setFinishedCount] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
   const [readDays, setReadDays] = useState(0);
@@ -128,14 +132,17 @@ export default function Dashboard({ hasKey }: DashboardProps) {
          if (match) finishedFromStat = parseInt(match[0], 10);
        }
 
-       // overall 模式：与「书架 → 已读完」完全一致，使用 notebooks 中 markedStatus === 4 且有 book 的数量
-       // 其它周期（weekly/monthly/annually）：使用 readStat 中「读完」的周期统计值
+       // overall 模式：与「书架 → 已读完」完全一致，使用 notebooks 中 markedStatus === 4 且有 book 的数量；
+       // 传参带 selectedYear 的年份模式同样是周期口径，用 readStat 的周期值。
+       // 周期值缺失时才回退书架累计数，且绝不与累计值取 max（会把周期 1 本显示成累计 8 本）
        let finalFinished: number;
        if (timeMode === 'overall' && notebooksData) {
          finalFinished = (notebooksData.books || [])
            .filter(item => item.markedStatus === 4 && item.book).length;
+       } else if (finishedFromStat > 0) {
+         finalFinished = finishedFromStat;
        } else {
-         finalFinished = Math.max(shelfFinished, finishedFromStat);
+         finalFinished = shelfFinished;
        }
 
        setFinishedCount(finalFinished);
@@ -440,6 +447,8 @@ export default function Dashboard({ hasKey }: DashboardProps) {
     <>
        {/* Header */}
        <div className="mb-6 sm:mb-8">
+       {/* 往年今天（桌面版本地库，纯本地查询） */}
+       {onSelectBook && <OnThisDayCard onSelectBook={onSelectBook} />}
          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
            <div>
              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
@@ -512,12 +521,13 @@ export default function Dashboard({ hasKey }: DashboardProps) {
              className={`h-full bg-gradient-to-br ${card.accent} rounded-xl sm:rounded-2xl border p-2 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200`}
            >
              <div className="flex items-center justify-center sm:justify-between gap-1 sm:gap-0 mb-0.5 sm:mb-3">
-               <p className="text-[10px] sm:text-sm text-gray-500 truncate">{card.label}</p>
-               <span className={`w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center text-[10px] sm:text-sm flex-shrink-0 ${card.iconBg}`}>
+               <p className="text-xs sm:text-sm text-gray-500 leading-snug">{card.label}</p>
+               <span className={`w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center text-xs sm:text-sm flex-shrink-0 ${card.iconBg}`}>
                  {card.icon}
                </span>
              </div>
-             <p className="text-xs sm:text-2xl font-bold text-gray-900 text-center sm:text-left truncate">{card.value}</p>
+             {/* 数值不截断：长时长（如 128小时）完整换行显示 */}
+             <p className="text-sm sm:text-2xl font-bold text-gray-900 text-center sm:text-left leading-tight break-words">{card.value}</p>
            </div>
          ))}
        </div>

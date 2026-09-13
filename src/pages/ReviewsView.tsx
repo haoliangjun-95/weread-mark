@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import type { ReactNode } from 'react';
+import { useDialogLifecycle } from '../utils/dialog';
 import type { BookItem, ReviewItem } from '../types/weread';
-import { fetchAllNotebooks, fetchBookReviews } from '../services/weread';
+import { fetchAllNotebooks, fetchAllBookReviews } from '../services/weread';
 import { useInfiniteScroll } from '../utils/filterUtils';
+import { richTextToPlain, sanitizeRichText } from '../utils/sanitize';
 import { exportReviewToPdf } from '../utils/exportPdf';
 import { exportItemToImage } from '../utils/exportImage';
 import { showToast } from '../utils/toast';
@@ -32,13 +35,7 @@ function formatDate(timestamp: number): string {
 }
 
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
-    .replace(/javascript:/gi, '');
+  return sanitizeRichText(html);
 }
 
 export default function ReviewsView() {
@@ -85,8 +82,8 @@ export default function ReviewsView() {
         const settled = await Promise.all(
           slice.map(async n => {
             try {
-              const rv = await fetchBookReviews(n.bookId);
-          return (rv.reviews || [])
+              const allReviews = await fetchAllBookReviews(n.bookId);
+          return allReviews
             .filter(r => r.review?.type === 4 && (r.review.htmlContent || r.review.content))
             .map(r => ({ book: n.book as BookItem, review: r.review, likesCount: r.likesCount }));
             } catch {
@@ -229,9 +226,8 @@ export default function ReviewsView() {
 }
 
 function stripHtml(html: string): string {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  return tmp.innerText || tmp.textContent || '';
+  // DOMParser 文档不加载子资源，避免 innerHTML 触发 img onerror 等副作用
+  return richTextToPlain(html);
 }
 
 const COLLAPSED_MAX_HEIGHT = 180;
@@ -408,16 +404,8 @@ function ReviewCard({ item }: { item: MyReview }) {
     </div>
 
     {previewOpen && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
-        onClick={() => setPreviewOpen(false)}
-      >
-        <div
-          className="rounded-2xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[88vh] flex flex-col overflow-hidden animate-scale-in"
-          style={{ backgroundColor: 'var(--card-bg)' }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="flex items-start gap-3 sm:gap-4 p-4 sm:p-5 border-b" style={{ borderColor: 'var(--border-light)' }}>
+      <PreviewModal onClose={() => setPreviewOpen(false)}>
+        <div className="flex items-start gap-3 sm:gap-4 p-4 sm:p-5 border-b" style={{ borderColor: 'var(--border-light)' }}>
             <div className="flex-shrink-0 w-14 h-18 sm:w-16 sm:h-22 rounded-md overflow-hidden shadow-sm" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
               {book.cover ? (
                 <img src={coverUrl} alt={book.title} className="w-full h-full object-cover" />
@@ -462,9 +450,32 @@ function ReviewCard({ item }: { item: MyReview }) {
               </p>
             )}
           </div>
-        </div>
-      </div>
+      </PreviewModal>
     )}
     </>
+  );
+}
+
+/** 书评预览弹窗：Escape 关闭、焦点进入/返回，语义化 dialog */
+function PreviewModal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const panelRef = useDialogLifecycle(onClose);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="书评预览"
+        tabIndex={-1}
+        className="rounded-2xl shadow-2xl w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[88vh] flex flex-col overflow-hidden animate-scale-in outline-none"
+        style={{ backgroundColor: 'var(--card-bg)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
   );
 }

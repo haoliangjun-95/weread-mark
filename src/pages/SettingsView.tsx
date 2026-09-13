@@ -1,8 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import aboutContent from '../assets/关于微痕.md?raw';
 import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
+import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri } from '../services/localDb';
+import type { SyncProgress, LocalStats, DbDirInfo } from '../services/localDb';
+import { markSynced } from '../services/dataService';
+import { open } from '@tauri-apps/plugin-dialog';
+import type { OpenDialogOptions } from '@tauri-apps/plugin-dialog';
+import { showToast } from '../utils/toast';
+import { useDialogLifecycle } from '../utils/dialog';
 import type { ViewType, ThemeType, FontType, FontSize, ExportStyleType } from '../App';
 
 interface SettingsViewProps {
@@ -19,15 +26,15 @@ interface SettingsViewProps {
   onApiKeyChange: () => void;
 }
 
-const themes: { key: ThemeType; label: string; desc: string; icon: string; bg: string; border: string; activeBg: string; activeBorder: string; swatch: string }[] = [
-  { key: 'default', label: '默认', desc: '清新蓝白', icon: '☀️', bg: '#ffffff', border: '#dfe7f0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: '#2367d9' },
-  { key: 'dark', label: '深色', desc: '深邃暗夜', icon: '🌙', bg: '#182133', border: '#263449', activeBg: '#203a5e', activeBorder: '#5aa2ff', swatch: '#5aa2ff' },
-  { key: 'eye', label: '护眼', desc: '暖茶书卷', icon: '◐', bg: '#fffaf0', border: '#e4d7ba', activeBg: '#eee5d0', activeBorder: '#736145', swatch: '#736145' },
-  { key: 'green', label: '浅绿', desc: '纸页浅茵', icon: '◍', bg: '#f7fff5', border: '#cfe4d0', activeBg: '#d8eadc', activeBorder: '#4f7b62', swatch: '#4f7b62' },
-  { key: 'paper', label: '纸白', desc: '清透纸页', icon: '□', bg: '#fbfaf7', border: '#dedbd3', activeBg: '#f2f0ea', activeBorder: '#70706a', swatch: '#f7f6f1' },
-  { key: 'mist', label: '冷灰', desc: '薄雾纸纹', icon: '◌', bg: '#f2f5f4', border: '#d4dcdd', activeBg: '#e4ecee', activeBorder: '#587178', swatch: '#dfe9eb' },
-  { key: 'apricot', label: '杏暖', desc: '落日书页', icon: '◒', bg: '#fff1df', border: '#efd0ac', activeBg: '#ffe3bd', activeBorder: '#b87530', swatch: '#f4a65f' },
-  { key: 'rose', label: '月粉', desc: '柔粉月光', icon: '○', bg: '#f9e8e6', border: '#e8c8c9', activeBg: '#f3d7d8', activeBorder: '#ad6c73', swatch: '#d99a9f' },
+const themes: { key: ThemeType; label: string; desc: string; icon: string; bg: string; border: string; activeBg: string; activeBorder: string; swatch: string; previewText: string; previewMuted: string }[] = [
+  { key: 'default', label: '默认', desc: '清新蓝白', icon: '☀️', bg: '#ffffff', border: '#dfe7f0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: '#2367d9', previewText: '#1f2937', previewMuted: '#5b6472' },
+  { key: 'dark', label: '深色', desc: '深邃暗夜', icon: '🌙', bg: '#182133', border: '#263449', activeBg: '#203a5e', activeBorder: '#8fc0ff', swatch: '#5aa2ff', previewText: '#e5edff', previewMuted: '#9db1cf' },
+  { key: 'eye', label: '护眼', desc: '暖茶书卷', icon: '◐', bg: '#fffaf0', border: '#e4d7ba', activeBg: '#eee5d0', activeBorder: '#5c4b36', swatch: '#736145', previewText: '#463a27', previewMuted: '#82735a' },
+  { key: 'green', label: '浅绿', desc: '纸页浅茵', icon: '◍', bg: '#f7fff5', border: '#cfe4d0', activeBg: '#d8eadc', activeBorder: '#3e6350', swatch: '#4f7b62', previewText: '#2c4636', previewMuted: '#66806f' },
+  { key: 'paper', label: '纸白', desc: '清透纸页', icon: '□', bg: '#fbfaf7', border: '#dedbd3', activeBg: '#f2f0ea', activeBorder: '#565650', swatch: '#f7f6f1', previewText: '#3c3c37', previewMuted: '#7b7b73' },
+  { key: 'mist', label: '冷灰', desc: '薄雾纸纹', icon: '◌', bg: '#f2f5f4', border: '#d4dcdd', activeBg: '#e4ecee', activeBorder: '#44585f', swatch: '#dfe9eb', previewText: '#2e3f47', previewMuted: '#66787f' },
+  { key: 'apricot', label: '杏暖', desc: '落日书页', icon: '◒', bg: '#fff1df', border: '#efd0ac', activeBg: '#ffe3bd', activeBorder: '#8f5a22', swatch: '#f4a65f', previewText: '#5e4018', previewMuted: '#96744a' },
+  { key: 'rose', label: '月粉', desc: '柔粉月光', icon: '○', bg: '#f9e8e6', border: '#e8c8c9', activeBg: '#f3d7d8', activeBorder: '#8a545b', swatch: '#d99a9f', previewText: '#5f3238', previewMuted: '#93646b' },
 ];
 
 const fonts: { key: FontType; label: string; preview: string }[] = [
@@ -75,6 +82,213 @@ function SectionTitle({ title, desc }: { title: string; desc?: string }) {
           {desc}
         </p>
       )}
+    </div>
+  );
+}
+
+/** 本地数据同步卡片（仅桌面版渲染）：同步全量书架/笔记到 SQLite，本地秒读 + 可离线 */
+function SyncCard() {
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [missingCount, setMissingCount] = useState(0);
+  const [stats, setStats] = useState<LocalStats | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    const [status, s] = await Promise.all([getSyncStatus(), getLocalStats()]);
+    setLastSyncAt(status.lastSyncAt);
+    setMissingCount(status.missingCount);
+    setStats(s);
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(refreshStatus);
+  }, [refreshStatus]);
+
+  const handleSync = async () => {
+    if (syncing) return;
+    if (!getApiKey()) {
+      showToast('请先配置 API Key', 'error');
+      return;
+    }
+    setSyncing(true);
+    setProgress({ done: 0, total: 0, phase: 'books' });
+    try {
+      const result = await syncAll(p => setProgress(p));
+      markSynced();
+      if (result.failedCount > 0) {
+        showToast(`同步完成，${result.changedCount} 本有变化，但 ${result.failedCount} 本失败（可稍后重新同步补齐）`, 'error');
+      } else if (result.changedCount < result.totalCount) {
+        showToast(`增量同步完成：${result.changedCount}/${result.totalCount} 本有变化`, 'success');
+      } else {
+        showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
+      }
+      await refreshStatus();
+    } catch (err) {
+      console.error('同步失败：', err);
+      // Tauri IPC 拒绝时抛的是字符串而非 Error，String() 兜底保证错误可见
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`同步失败：${msg || '未知错误'}`, 'error');
+    } finally {
+      setSyncing(false);
+      setProgress(null);
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border p-5" style={cardStyle}>
+      <SectionTitle
+        title="本地数据同步"
+        desc="将书架、划线、想法、书评同步到本地数据库，同步后读取毫秒级、可离线使用。"
+      />
+      <div className="space-y-3">
+        {stats && stats.bookCount > 0 && (
+          <div className="rounded-xl border px-3 py-2.5 text-xs leading-relaxed"
+            style={{ ...subtlePanelStyle, color: 'var(--text-secondary)' }}>
+            <p>
+              📚 {stats.bookCount} 本书 · 📝 {stats.noteBookCount} 本有笔记 ·
+              共 {stats.bookmarkCount} 条划线 + {stats.reviewCount} 条想法/书评
+            </p>
+            {lastSyncAt && (
+              <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+                上次同步：{new Date(lastSyncAt * 1000).toLocaleString('zh-CN')}
+              </p>
+            )}
+            {lastSyncAt && missingCount > 0 && (
+              <p className="mt-1 font-medium" style={{ color: 'var(--warning-text)' }}>
+                ⚠ 上次同步不完整（缺 {missingCount} 本书），当前读取已回退在线模式，建议重新同步
+              </p>
+            )}
+          </div>
+        )}
+        {syncing && progress && (
+          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            {progress.phase === 'books'
+              ? '正在同步书目列表...'
+              : `正在同步笔记内容 ${progress.done}/${progress.total} 本`}
+            <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: progress.phase === 'books' || progress.total === 0
+                    ? '8%'
+                    : `${Math.round((progress.done / progress.total) * 100)}%`,
+                  backgroundColor: 'var(--accent-color)',
+                }}
+              />
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          className="settings-primary-button w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {syncing ? '同步中...' : lastSyncAt ? '重新同步' : '同步到本地'}
+        </button>
+
+        <StorageDirSection disabled={syncing} onDone={refreshStatus} />
+      </div>
+    </section>
+  );
+}
+
+/** 存储位置区块：展示当前数据库路径，支持更改为自定义目录 / 恢复默认（切换时自动迁移数据） */
+function StorageDirSection({ disabled, onDone }: { disabled: boolean; onDone: () => Promise<void> | void }) {
+  const [dirInfo, setDirInfo] = useState<DbDirInfo | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setDirInfo(await getDbDirInfo());
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(refresh);
+  }, [refresh]);
+
+  const pickAndSwitch = async () => {
+    if (switching) return;
+    const selected = await open<OpenDialogOptions>({
+      directory: true,
+      multiple: false,
+      title: '选择数据库存储目录',
+    });
+    if (!selected || typeof selected !== 'string') return;
+    if (dirInfo?.customDir === selected) {
+      showToast('已是当前存储目录', 'info');
+      return;
+    }
+    setSwitching(true);
+    try {
+      const migrated = await changeDbDir(selected);
+      showToast(
+        migrated
+          ? '存储目录已更改，数据已迁移，无需重新同步'
+          : '存储目录已更改（新目录为空，需重新同步数据）',
+        'success',
+      );
+      await refresh();
+      await onDone();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`更改目录失败，已恢复原目录：${msg}`, 'error');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const restoreDefault = async () => {
+    if (switching) return;
+    setSwitching(true);
+    try {
+      const migrated = await changeDbDir(null);
+      showToast(migrated ? '已恢复默认目录，数据已迁移' : '已恢复默认目录', 'success');
+      await refresh();
+      await onDone();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`恢复默认失败：${msg}`, 'error');
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  if (!dirInfo) return null;
+
+  return (
+    <div className="rounded-xl border px-3 py-2.5 text-xs" style={subtlePanelStyle}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>存储位置</span>
+        <div className="flex items-center gap-1.5">
+          {dirInfo.customDir && (
+            <button
+              type="button"
+              onClick={restoreDefault}
+              disabled={disabled || switching}
+              className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+            >
+              恢复默认
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={pickAndSwitch}
+            disabled={disabled || switching}
+            className="px-2 py-1 rounded-lg border text-[11px] transition-colors disabled:opacity-50"
+            style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}
+          >
+            {switching ? '迁移中...' : '更改目录'}
+          </button>
+        </div>
+      </div>
+      <p className="mt-1.5 break-all leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        {dirInfo.customDir ? '自定义：' : '默认：'}{dirInfo.currentPath}
+      </p>
+      <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
+        更改目录会自动迁移数据库文件；如目标目录已存在本应用数据则直接沿用。
+      </p>
     </div>
   );
 }
@@ -143,6 +357,11 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
       {/* 移动端：API 配置置顶 */}
       <div className="lg:hidden mb-6">
         <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
+        {isTauri && (
+          <div className="mt-5">
+            <SyncCard />
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
@@ -151,6 +370,8 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
           <div className="hidden lg:block">
             <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
           </div>
+
+          {isTauri && <SyncCard />}
 
           <section className="rounded-2xl border p-5" style={cardStyle}>
             <SectionTitle title="关于微痕" desc="让阅读留下温柔的痕迹" />
@@ -213,7 +434,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>主题</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>当前：{themes.find(item => item.key === theme)?.label}</p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3 sm:gap-4">
                   {themes.map(t => {
                     const active = theme === t.key;
                     return (
@@ -221,11 +442,13 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                         key={t.key}
                         type="button"
                         onClick={() => onThemeChange(t.key)}
+                        aria-pressed={active}
                         className="relative min-h-32 rounded-xl border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-md"
                         style={{
                           backgroundColor: active ? t.activeBg : t.bg,
                           borderColor: active ? t.activeBorder : t.border,
-                          color: active ? t.activeBorder : 'var(--text-secondary)',
+                          // 预览卡文字使用与预览背景配套的颜色，保证对比度不随当前主题漂移
+                          color: active ? t.activeBorder : t.previewText,
                           boxShadow: active ? `0 12px 30px -20px ${t.activeBorder}` : 'none',
                         }}
                       >
@@ -236,7 +459,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                           </span>
                           <span className="min-w-0">
                             <span className="block text-sm font-bold">{t.label}</span>
-                            <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: active ? t.activeBorder : 'var(--text-muted)' }}>
+                            <span className="mt-0.5 block text-[11px] leading-relaxed" style={{ color: active ? t.activeBorder : t.previewMuted }}>
                               {t.desc}
                             </span>
                           </span>
@@ -252,7 +475,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                   <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>字体</p>
                   <p className="text-xs" style={{ color: 'var(--text-muted)' }}>当前：{fonts.find(item => item.key === font)?.label}</p>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3 sm:gap-4">
                   {fonts.map(f => {
                     const active = font === f.key;
                     return (
@@ -304,9 +527,11 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                       >{opt.label}</button>
                     );
                   })}
-                  <span className="text-xs mx-1" style={{ color: 'var(--text-muted)' }}>自定义</span>
+                  <label htmlFor="font-size-input" className="text-xs mx-1" style={{ color: 'var(--text-muted)' }}>自定义</label>
                   <input
+                    id="font-size-input"
                     type="number"
+                    aria-label="自定义字号（10-20 像素）"
                     min={10}
                     max={20}
                     value={(() => {
@@ -368,9 +593,19 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
 }
 
 function AboutDialog({ onClose }: { onClose: () => void }) {
+  const panelRef = useDialogLifecycle(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
-      <div className="max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-2xl border shadow-2xl" style={cardStyle} onClick={e => e.stopPropagation()}>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="关于微痕"
+        tabIndex={-1}
+        className="max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-2xl border shadow-2xl outline-none"
+        style={cardStyle}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-light)' }}>
           <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>关于微痕</h3>
           <button
@@ -549,12 +784,15 @@ function ApiKeyCard({ keyExpired, onNavigate, onApiKeyChange }: { keyExpired?: b
         {editing ? (
           <div className="space-y-3">
             <div className="relative">
+              <label htmlFor="api-key-input" className="sr-only">微信读书 API Key</label>
               <input
+                id="api-key-input"
                 type={show ? 'text' : 'password'}
                 value={value}
                 onChange={e => { setValue(e.target.value); setKeyError(null); }}
                 onKeyDown={e => e.key === 'Enter' && handleSave()}
                 placeholder="wrk-xxxxxxxxxxxx"
+                aria-describedby="api-key-help"
                 className="h-11 w-full rounded-xl border pl-3 pr-11 text-sm font-mono focus:outline-none focus:ring-2"
                 style={{ borderColor: 'var(--input-border)', backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)' }}
               />
@@ -568,6 +806,7 @@ function ApiKeyCard({ keyExpired, onNavigate, onApiKeyChange }: { keyExpired?: b
                 {show ? '🙈' : '👁'}
               </button>
             </div>
+            <p id="api-key-help" className="sr-only">格式形如 wrk- 开头的字符串，从微信读书官网获取</p>
             <div className="flex gap-2">
               <button
                 type="button"

@@ -11,11 +11,15 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "dev:clean": "pkill -f \"tauri dev\" 2>/dev/null; pkill -f \"target/debug/weread-mark\" 2>/dev/null; pkill -f vite 2>/dev/null; sleep 1; lsof -ti :5173 >/dev/null 2>&1 && echo \"5173 仍被占用: $(lsof -ti :5173)\" || echo \"端口已释放\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-sql": "^2.4.1",
     "dom-to-image-more": "^3.10.0",
+    "dompurify": "^3.4.14",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1"

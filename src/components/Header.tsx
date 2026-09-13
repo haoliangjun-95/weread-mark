@@ -1,4 +1,5 @@
 import type { ViewType } from '../App';
+import { isTauri } from '../services/localDb';
 import logo from '../assets/logo.png';
 
 interface HeaderProps {
@@ -7,14 +8,18 @@ interface HeaderProps {
     hasKey: boolean;
 }
 
-const navItems: { key: ViewType; label: string; icon: string }[] = [
+const allNavItems: { key: ViewType; label: string; icon: string }[] = [
     { key: 'home', label: '搜索', icon: '🔍' },
     { key: 'shelf', label: '书架', icon: '📚' },
     { key: 'reviews', label: '书评墙', icon: '⭐' },
+    { key: 'rank', label: '排行榜', icon: '🏆' },
     { key: 'dashboard', label: '看板', icon: '📊' },
     { key: 'notes', label: '笔记', icon: '📝' },
     { key: 'settings', label: '设置', icon: '⚙️' },
 ];
+
+// 排行榜依赖本地 SQLite 数据，仅在桌面版展示
+const navItems = isTauri ? allNavItems : allNavItems.filter(item => item.key !== 'rank');
 
 export default function Header({ currentView, onNavigate, hasKey }: HeaderProps) {
     return (
@@ -29,8 +34,12 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                         <h1 className="text-sm sm:text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>
                             微痕
                         </h1>
-                        <span className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-mono flex-shrink-0" style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-              v{__APP_VERSION__}
+                        <span
+              className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-mono flex-shrink-0"
+              style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
+              title={`构建于 ${new Date(__BUILD_TIME__).toLocaleString('zh-CN')}`}
+            >
+              v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
             </span>
                     </div>
                     <div className="flex items-center gap-1">
@@ -43,6 +52,7 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                                         onClick={() => onNavigate(item.key)}
                                         disabled={disabled}
                                         title={disabled ? '请先在设置页配置 API Key' : item.label}
+                                        aria-current={currentView === item.key ? 'page' : undefined}
                                         className="px-3 lg:px-4 py-2 rounded-xl text-sm font-medium transition-all"
                                         style={{
                                             backgroundColor: currentView === item.key ? 'var(--accent-color)' : 'transparent',
@@ -67,8 +77,9 @@ export default function Header({ currentView, onNavigate, hasKey }: HeaderProps)
                                         onClick={() => onNavigate(item.key)}
                                         disabled={disabled}
                                         aria-label={item.label}
+                                        aria-current={currentView === item.key ? 'page' : undefined}
                                         title={disabled ? '请先在设置页配置 API Key' : item.label}
-                                        className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all"
+                                        className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg text-base transition-all"
                                         style={{
                                             backgroundColor: currentView === item.key ? 'var(--accent-color)' : 'transparent',
                                             color: currentView === item.key ? 'var(--accent-contrast)' : disabled ? 'var(--text-muted)' : 'var(--text-secondary)',
