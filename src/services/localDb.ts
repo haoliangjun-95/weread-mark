@@ -403,7 +403,7 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     await db.execute(
       'INSERT OR REPLACE INTO stats_snapshots (date, totalReadTime, readDays, bookCount, finishedCount, noteTotal) VALUES (?, ?, ?, ?, ?, ?)',
       [new Date().toISOString().slice(0, 10), stats.totalReadTime || 0, stats.readDays || 0,
-       bookRows.size, finishedRow[0]?.c || 0,
+       bookRows.size, Number(finishedRow[0]?.c || 0),
        (notebooks.books || []).reduce((s, nb) => s + nb.noteCount + nb.reviewCount + nb.bookmarkCount, 0)],
     );
   } catch (err) {
@@ -494,7 +494,8 @@ export async function hasLocalData(): Promise<boolean> {
     const missing = await db.select<{ c: number }>(
       'SELECT COUNT(*) as c FROM books WHERE (noteCount > 0 OR reviewCount > 0) AND syncedAt = 0',
     );
-    return (missing[0]?.c || 0) === 0;
+    // 鸿蒙桥的查询值为字符串（如 "0"），严格相等前必须转数字
+    return Number(missing[0]?.c || 0) === 0;
   } catch {
     return false;
   }
@@ -512,7 +513,7 @@ export async function getSyncStatus(): Promise<{ lastSyncAt: number | null; miss
     ]);
     return {
       lastSyncAt: rows.length > 0 ? parseInt(rows[0].value, 10) : null,
-      missingCount: missing[0]?.c || 0,
+      missingCount: Number(missing[0]?.c || 0),
     };
   } catch {
     return { lastSyncAt: null, missingCount: 0 };
@@ -638,10 +639,10 @@ export async function getLocalStats(): Promise<LocalStats | null> {
       'SELECT COUNT(*) as c FROM books WHERE noteCount > 0 OR reviewCount > 0',
     );
     return {
-      bookCount: books[0]?.c || 0,
-      noteBookCount: noteBooks[0]?.c || 0,
-      bookmarkCount: bms[0]?.c || 0,
-      reviewCount: rvs[0]?.c || 0,
+      bookCount: Number(books[0]?.c || 0),
+      noteBookCount: Number(noteBooks[0]?.c || 0),
+      bookmarkCount: Number(bms[0]?.c || 0),
+      reviewCount: Number(rvs[0]?.c || 0),
     };
   } catch {
     return null;
@@ -830,7 +831,7 @@ export async function queryHasBookReview(bookId: string): Promise<boolean> {
   const db = await getDb();
   const rows = await db.select<{ c: number }>(
     'SELECT COUNT(*) as c FROM reviews WHERE bookId = ? AND type = 4', [bookId]);
-  return (rows[0]?.c || 0) > 0;
+  return Number(rows[0]?.c || 0) > 0;
 }
 
 export interface LocalSearchResult {
