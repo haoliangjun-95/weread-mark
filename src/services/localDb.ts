@@ -299,10 +299,22 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     fetchAllNotebooks(),
   ]);
 
-  const existingRows = await db.select<{
+  interface ExistingRow {
     bookId: string; noteCount: number; reviewCount: number;
     bookmarkCount: number; markedStatus: number; syncedAt: number;
-  }>('SELECT bookId, noteCount, reviewCount, bookmarkCount, markedStatus, syncedAt FROM books');
+  }
+  const rawExisting = await db.select<Record<string, unknown>>(
+    'SELECT bookId, noteCount, reviewCount, bookmarkCount, markedStatus, syncedAt FROM books');
+  // 鸿蒙桥查询值统一为字符串：数值字段读出后必须集中归一为 number，
+  // 否则增量判断的严格比较（如 syncedAt === 0 对 "0"）恒 false，缺失书永远不会重拉
+  const existingRows: ExistingRow[] = rawExisting.map(r => ({
+    bookId: String(r.bookId),
+    noteCount: Number(r.noteCount || 0),
+    reviewCount: Number(r.reviewCount || 0),
+    bookmarkCount: Number(r.bookmarkCount || 0),
+    markedStatus: Number(r.markedStatus || 0),
+    syncedAt: Number(r.syncedAt || 0),
+  }));
   const existing = new Map(existingRows.map(r => [r.bookId, r]));
 
   const bookRows = new Map<string, Record<string, unknown>>();
@@ -360,7 +372,8 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
   // 用本地 reviews 实际条数与线上 reviewCount 对账，缺的书自动重拉。
   const localReviewCounts = new Map(
     (await db.select<{ bookId: string; c: number }>(
-      'SELECT bookId, COUNT(*) as c FROM reviews GROUP BY bookId')).map(r => [r.bookId, r.c]),
+      'SELECT bookId, COUNT(*) as c FROM reviews GROUP BY bookId'))
+      .map(r => [String(r.bookId), Number(r.c || 0)] as [string, number]),
   );
   const allNotebookBooks = (notebooks.books || []).filter(nb => nb.book?.bookId);
   const targets = allNotebookBooks.filter(nb => {
