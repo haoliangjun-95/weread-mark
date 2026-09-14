@@ -110,9 +110,25 @@ interface HarmonyDbBridge {
 /** 桥调用超时保护：ArkWeb 的 async 方法偶发悬挂时避免同步流程永久卡死 */
 const BRIDGE_TIMEOUT_MS = 30000;
 
+/** 桥抛出的 ArkTS Error 跨桥后是普通对象（{code,message} 或纯字符串），
+ *  String() 会得到 [object Object]，统一归一为带可读 message 的 Error */
+function normalizeBridgeError(e: unknown, label: string): Error {
+  if (typeof e === 'string') return new Error(`${label}: ${e}`);
+  if (e && typeof e === 'object') {
+    const obj = e as { message?: unknown; code?: unknown };
+    if (typeof obj.message === 'string' && obj.message) return new Error(`${label}: ${obj.message}`);
+    try {
+      return new Error(`${label}: ${JSON.stringify(e)}`);
+    } catch {
+      return new Error(`${label}: 未知错误`);
+    }
+  }
+  return new Error(`${label}: ${String(e)}`);
+}
+
 function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
   return Promise.race([
-    p,
+    p.catch(e => { throw normalizeBridgeError(e, label); }),
     new Promise<T>((_, reject) => {
       setTimeout(() => reject(new Error(`${label} 桥调用超时(${BRIDGE_TIMEOUT_MS / 1000}s)`)), BRIDGE_TIMEOUT_MS);
     }),
@@ -420,7 +436,11 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       try {
         await syncOne(nb);
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
+        const reason = err instanceof Error
+          ? err.message
+          : (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string'
+              ? (err as { message: string }).message
+              : (() => { try { return JSON.stringify(err); } catch { return String(err); } })());
         console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, reason);
         failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
@@ -443,7 +463,11 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       try {
         await syncOne(nb);
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
+        const reason = err instanceof Error
+          ? err.message
+          : (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string'
+              ? (err as { message: string }).message
+              : (() => { try { return JSON.stringify(err); } catch { return String(err); } })());
         console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, reason);
         failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
