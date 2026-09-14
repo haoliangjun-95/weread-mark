@@ -5,7 +5,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 /** 单元格值：RDB 无列类型元数据，统一按文本返回，前端用 Number()/String() 显式转换 */
-type CellValue = string | null;
+type CellValue = number | string | null;
 
 /** 原生 httpPost 的返回结构（ArkTS 要求对象字面量对应显式类型） */
 interface HttpResult {
@@ -85,7 +85,7 @@ class HarmonyBridge {
     }
   }
 
-  /** 查询语句，返回行对象数组（值统一为字符串或 null，前端显式转换类型） */
+  /** 查询语句，返回行对象数组（数字列为 number，文本列为 string，空为 null） */
   async dbSelect(sql: string, params?: Array<relationalStore.ValueType>): Promise<Array<Record<string, CellValue>>> {
     try {
       const store = await this.getStore();
@@ -98,7 +98,13 @@ class HarmonyBridge {
           if (resultSet.isColumnNull(i)) {
             row[name] = null;
           } else {
-            row[name] = resultSet.getString(i);
+            // 数字列返回原生 number（根治前端 === 数字比较的字符串雷）；
+            // getLong 对文本列抛异常，回退 getString
+            try {
+              row[name] = resultSet.getLong(i);
+            } catch {
+              row[name] = resultSet.getString(i);
+            }
           }
         }
         rows.push(row);
