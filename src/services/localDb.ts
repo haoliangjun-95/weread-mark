@@ -280,9 +280,16 @@ const SYNC_CONCURRENCY = 10;
  * 全量同步：书架 + 笔记列表落 books 表，再逐书拉划线/想法/书评落明细表，
  * 最后写统计快照。返回同步失败（重试后仍失败）的书数量。
  */
+export interface SyncFailure {
+  title: string;
+  reason: string;
+}
+
 export interface SyncResult {
   /** 重试后仍失败的书数量 */
   failedCount: number;
+  /** 失败原因样本（最多 3 条，用于界面展示定位根因） */
+  failureSamples: SyncFailure[];
   /** 本次实际拉取明细的书数量（增量同步时有变化的书 + 首次同步） */
   changedCount: number;
   /** 笔记书总数 */
@@ -387,6 +394,7 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
   });
   let done = 0;
   const failedBooks: typeof targets = [];
+  const failureSamples: SyncFailure[] = [];
   onProgress?.({ done: 0, total: targets.length, phase: 'contents' });
 
   const syncOne = async (nb: (typeof targets)[number]) => {
@@ -412,7 +420,9 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       try {
         await syncOne(nb);
       } catch (err) {
-        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, err);
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, reason);
+        failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
       } finally {
         done++;
@@ -433,7 +443,9 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       try {
         await syncOne(nb);
       } catch (err) {
-        console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, err);
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, reason);
+        failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
       } finally {
         retryDone++;
@@ -467,7 +479,12 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     'lastSyncAt',
     String(Math.floor(Date.now() / 1000)),
   ]);
-  return { failedCount: failedBooks.length, changedCount: targets.length, totalCount: allNotebookBooks.length };
+  return {
+    failedCount: failedBooks.length,
+    failureSamples: failureSamples.slice(0, 3),
+    changedCount: targets.length,
+    totalCount: allNotebookBooks.length,
+  };
 }
 
 async function syncBookContents(

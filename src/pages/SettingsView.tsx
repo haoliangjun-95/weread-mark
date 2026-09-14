@@ -4,7 +4,7 @@ import wdLogo from '../assets/wd.png';
 import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
 import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri, isHarmony, isNativeApp } from '../services/localDb';
-import type { SyncProgress, LocalStats, DbDirInfo } from '../services/localDb';
+import type { SyncProgress, LocalStats, DbDirInfo, SyncResult } from '../services/localDb';
 import { markSynced } from '../services/dataService';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { OpenDialogOptions } from '@tauri-apps/plugin-dialog';
@@ -93,6 +93,7 @@ function SyncCard() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [missingCount, setMissingCount] = useState(0);
   const [stats, setStats] = useState<LocalStats | null>(null);
+  const [syncFailureInfo, setSyncFailureInfo] = useState<SyncResult | null>(null);
 
   const refreshStatus = useCallback(async () => {
     const [status, s] = await Promise.all([getSyncStatus(), getLocalStats()]);
@@ -117,8 +118,13 @@ function SyncCard() {
       const result = await syncAll(p => setProgress(p));
       markSynced();
       if (result.failedCount > 0) {
-        showToast(`同步完成，${result.changedCount} 本有变化，但 ${result.failedCount} 本失败（可稍后重新同步补齐）`, 'error');
-      } else if (result.changedCount < result.totalCount) {
+        // 失败原因直接上屏，便于定位（频控/网络/桥异常一目了然）
+        setSyncFailureInfo(result);
+        showToast(`同步完成，${result.changedCount} 本有变化，但 ${result.failedCount} 本失败（详见下方原因）`, 'error');
+      } else {
+        setSyncFailureInfo(null);
+      }
+      if (result.failedCount === 0 && result.changedCount < result.totalCount) {
         showToast(`增量同步完成：${result.changedCount}/${result.totalCount} 本有变化`, 'success');
       } else {
         showToast('同步完成，书架/笔记/搜索已切换为本地读取', 'success');
@@ -158,6 +164,16 @@ function SyncCard() {
               <p className="mt-1 font-medium" style={{ color: 'var(--warning-text)' }}>
                 ⚠ 上次同步不完整（缺 {missingCount} 本书），当前读取已回退在线模式，建议重新同步
               </p>
+            )}
+            {syncFailureInfo && syncFailureInfo.failureSamples.length > 0 && (
+              <div className="mt-1.5 space-y-1">
+                <p className="font-medium" style={{ color: 'var(--error-text)' }}>失败原因样本：</p>
+                {syncFailureInfo.failureSamples.map((f, i) => (
+                  <p key={i} className="break-all" style={{ color: 'var(--text-muted)' }}>
+                    《{f.title}》：{f.reason}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
         )}
