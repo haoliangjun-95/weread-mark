@@ -32,6 +32,8 @@ const SCHEMA_VERSION = 2;
 interface DbConnection {
   execute(query: string, params?: unknown[]): Promise<unknown>;
   select<T>(query: string, params?: unknown[]): Promise<T[]>;
+  /** 可选：同一 SQL 多组参数批量执行（单事务），同步大量行时远快于逐条调用 */
+  executeMany?(query: string, rows: unknown[][]): Promise<void>;
   /** 可选：关闭连接（切换存储目录时使用） */
   close?(): Promise<void>;
 }
@@ -101,7 +103,20 @@ async function openCapacitorDb(): Promise<DbConnection> {
 /** 鸿蒙实现：ArkTS 侧 registerJavaScriptProxy 注入的原生桥，底层是 relationalStore */
 interface HarmonyDbBridge {
   dbExecute(sql: string, params?: unknown[]): Promise<unknown>;
+  dbExecuteBatch(sql: string, paramsList?: unknown[][]): Promise<unknown>;
   dbSelect(sql: string, params?: unknown[]): Promise<unknown[]>;
+}
+
+/** 桥调用超时保护：ArkWeb 的 async 方法偶发悬挂时避免同步流程永久卡死 */
+const BRIDGE_TIMEOUT_MS = 30000;
+
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} 桥调用超时(${BRIDGE_TIMEOUT_MS / 1000}s)`)), BRIDGE_TIMEOUT_MS);
+    }),
+  ]);
 }
 
 async function openHarmonyDb(): Promise<DbConnection> {
@@ -110,8 +125,20 @@ async function openHarmonyDb(): Promise<DbConnection> {
     throw new Error('鸿蒙数据库桥未注入');
   }
   return {
-    execute: (q, p) => bridge.dbExecute(q, p),
-    select: <T,>(q: string, p?: unknown[]) => bridge.dbSelect(q, p) as Promise<T[]>,
+    execute: (q, p) => withTimeout(bridge.dbExecute(q, p), 'dbExecute'),
+    executeMany: async (q, rows) => {
+      if (bridge.dbExecuteBatch) {
+        // 每块 2000 行，避免单次跨桥参数过大
+        for (let i = 0; i < rows.length; i += 2000) {
+          await withTimeout(bridge.dbExecuteBatch(q, rows.slice(i, i + 2000)), 'dbExecuteBatch');
+        }
+      } else {
+        for (const row of rows) {
+          await bridge.dbExecute(q, row);
+        }
+      }
+    },
+    select: <T,>(q: string, p?: unknown[]) => withTimeout(bridge.dbSelect(q, p), 'dbSelect') as Promise<T[]>,
   };
 }
 
@@ -243,6 +270,8 @@ export interface SyncProgress {
   done: number;
   total: number;
   phase: 'books' | 'contents';
+  /** 可选阶段说明（如重试轮），UI 直接展示 */
+  stage?: string;
 }
 
 const SYNC_CONCURRENCY = 10;
@@ -379,17 +408,28 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     }));
   }
 
-  // 失败的书串行重试一轮（往往是瞬时限流），仍失败的计入返回值
+  // 失败的书串行重试一轮（往往是瞬时限流，含退避最长每本约 50 秒），仍失败的计入返回值。
+  // 重试也推进进度，否则 UI 会停在"最后一本卡住"的假象。
   if (failedBooks.length > 0) {
     console.warn(`[sync] ${failedBooks.length} 本书失败，开始重试`);
     const retry = [...failedBooks];
     failedBooks.length = 0;
+    let retryDone = 0;
+    const retryTotal = retry.length;
     for (const nb of retry) {
       try {
         await syncOne(nb);
       } catch (err) {
         console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, err);
         failedBooks.push(nb);
+      } finally {
+        retryDone++;
+        onProgress?.({
+          done,
+          total: targets.length + retryTotal,
+          phase: 'contents',
+          stage: `重试失败书籍 ${retryDone}/${retryTotal}`,
+        });
       }
     }
   }
@@ -430,29 +470,44 @@ async function syncBookContents(
   await db.execute('DELETE FROM reviews WHERE bookId = ?', [bookId]);
   await db.execute('DELETE FROM chapters WHERE bookId = ?', [bookId]);
 
-  for (const bm of bookmarks) {
-    await db.execute(
+  // 行数据先构造为参数数组；executeMany（单事务批量）可用时一次写入，
+  // 否则退化为逐条（tauri/capacitor 直连插件逐条也很快）
+  const bmRows = bookmarks.map(bm => [
+    bm.bookmarkId, bookId, bm.chapterUid ?? 0, bm.markText || '',
+    bm.createTime || 0, bm.type ?? 0, bm.range || '', bm.colorStyle ?? 0,
+  ]);
+  const chRows = chapters.map(ch => [bookId, ch.chapterUid, ch.chapterIdx ?? 0, ch.title || '']);
+  const rvRows = reviews.map(rv => [
+    rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? null,
+    rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? null,
+    rv.review.abstract ?? null, rv.review.type ?? null, rv.likesCount ?? null,
+    rv.review.range ?? null,
+  ]);
+
+  if (db.executeMany) {
+    await db.executeMany(
       `INSERT OR REPLACE INTO bookmarks (bookmarkId, bookId, chapterUid, markText, createTime, type, range, colorStyle)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [bm.bookmarkId, bookId, bm.chapterUid ?? 0, bm.markText || '',
-       bm.createTime || 0, bm.type ?? 0, bm.range || '', bm.colorStyle ?? 0],
-    );
-  }
-  for (const ch of chapters) {
-    await db.execute(
-      `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`,
-      [bookId, ch.chapterUid, ch.chapterIdx ?? 0, ch.title || ''],
-    );
-  }
-  for (const rv of reviews) {
-    await db.execute(
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, bmRows);
+    await db.executeMany(
+      `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`, chRows);
+    await db.executeMany(
       `INSERT OR REPLACE INTO reviews (reviewId, bookId, content, htmlContent, createTime, star, chapterName, abstract, type, likesCount, range)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? null,
-       rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? null,
-       rv.review.abstract ?? null, rv.review.type ?? null, rv.likesCount ?? null,
-       rv.review.range ?? null],
-    );
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, rvRows);
+  } else {
+    for (const row of bmRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO bookmarks (bookmarkId, bookId, chapterUid, markText, createTime, type, range, colorStyle)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, row);
+    }
+    for (const row of chRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`, row);
+    }
+    for (const row of rvRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO reviews (reviewId, bookId, content, htmlContent, createTime, star, chapterName, abstract, type, likesCount, range)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, row);
+    }
   }
 }
 

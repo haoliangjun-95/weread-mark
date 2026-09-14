@@ -165,7 +165,9 @@ function SyncCard() {
           <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
             {progress.phase === 'books'
               ? '正在同步书目列表...'
-              : `正在同步笔记内容 ${progress.done}/${progress.total} 本`}
+              : progress.stage
+                ? `${progress.stage}（每本退避重试最长约 1 分钟，请耐心等待）`
+                : `正在同步笔记内容 ${progress.done}/${progress.total} 本`}
             <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
               <div
                 className="h-full rounded-full transition-all"

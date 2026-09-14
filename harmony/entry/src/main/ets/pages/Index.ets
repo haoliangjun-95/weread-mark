@@ -59,6 +59,32 @@ class HarmonyBridge {
     }
   }
 
+  /** 批量写：同一 SQL 多组参数在单事务内执行（同步大量行时避免逐条跨桥调用） */
+  async dbExecuteBatch(sql: string, paramsList: Array<Array<relationalStore.ValueType>>): Promise<number> {
+    if (paramsList.length === 0) {
+      return 0;
+    }
+    let store: relationalStore.RdbStore;
+    try {
+      store = await this.getStore();
+    } catch (e) {
+      const err = e as BusinessError;
+      throw new Error(`dbExecuteBatch 获取连接失败: ${err.message}`);
+    }
+    store.beginTransaction();
+    try {
+      for (const params of paramsList) {
+        await store.executeSql(sql, params);
+      }
+      store.commit();
+      return paramsList.length;
+    } catch (e) {
+      store.rollBack();
+      const err = e as BusinessError;
+      throw new Error(`dbExecuteBatch 失败: ${err.message} SQL: ${sql.slice(0, 80)} 共 ${paramsList.length} 行`);
+    }
+  }
+
   /** 查询语句，返回行对象数组（值统一为字符串或 null，前端显式转换类型） */
   async dbSelect(sql: string, params?: Array<relationalStore.ValueType>): Promise<Array<Record<string, CellValue>>> {
     try {
@@ -128,31 +154,27 @@ struct Index {
   build() {
     Column() {
       Web({ src: $rawfile('web/index.html'), controller: this.controller })
-        .onControllerBound(() => {
+        .onControllerAttached(() => {
           // 属性式 javaScriptProxy 在引擎预热 + rawfile 场景下注入时机晚于首个页面加载，
           // 导致 window.HarmonyBridge 缺失（hilog: native proxy object not found）。
-          // onControllerBound 在任何页面加载前触发，注册必然生效。
+          // onControllerAttached 在任何页面加载前触发，注册必然生效。
           this.controller.registerJavaScriptProxy(this.bridge, 'HarmonyBridge',
-            ['dbExecute', 'dbSelect', 'httpPost']);
+            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost']);
         })
         .domStorageAccess(true)
         .databaseAccess(true)
         .fileAccess(true)
         .mixedMode(MixedMode.All)
         .zoomAccess(false)
-        .onErrorReceive((event) => {
-          if (event) {
-            console.error(`[ArkWeb] 加载错误: ${event.error.getErrorInfo()}`);
-          }
+        .onErrorReceive((event: OnErrorReceiveEvent) => {
+          console.error(`[ArkWeb] 加载错误: ${event.error.getErrorInfo()}`);
         })
-        .onConsole((event) => {
-          if (event) {
-            const msg = `[H5 Console] ${event.message.getMessageLevel()}: ${event.message.getMessage()}`;
-            if (event.message.getMessageLevel() === MessageLevel.Error) {
-              console.error(msg);
-            } else {
-              console.info(msg);
-            }
+        .onConsole((event: OnConsoleEvent) => {
+          const msg = `[H5 Console] ${event.message.getMessageLevel()}: ${event.message.getMessage()}`;
+          if (event.message.getMessageLevel() === MessageLevel.Error) {
+            console.error(msg);
+          } else {
+            console.info(msg);
           }
           return false;
         })
