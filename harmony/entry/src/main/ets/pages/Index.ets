@@ -102,7 +102,12 @@ class HarmonyBridge {
       store.beginTransaction();
       try {
         for (const params of paramsList) {
-          await store.executeSql(sql, params);
+        // JS null 跨桥后可能变为 undefined（不在 ValueType 联合内），统一归一为 null
+        const safe: Array<relationalStore.ValueType> = [];
+        for (const v of params) {
+          safe.push(v === undefined ? null : v);
+        }
+        await store.executeSql(sql, safe);
         }
         store.commit();
         return paramsList.length;

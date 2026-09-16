@@ -531,11 +531,14 @@ async function syncBookContents(
     bm.createTime || 0, bm.type ?? 0, bm.range || '', bm.colorStyle ?? 0,
   ]);
   const chRows = chapters.map(ch => [bookId, ch.chapterUid, ch.chapterIdx ?? 0, ch.title || '']);
+  // 可空字段统一写空串哨兵（''）而非 null：JS null 跨鸿蒙桥后类型失真，
+  // 会触发 executeSql "must be ValueObject" 参数错误（划线表无 null 字段故不受影响）；
+  // 读取端 nullableStr/nullableNum 将 '' 与 null 同等对待
   const rvRows = reviews.map(rv => [
-    rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? null,
-    rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? null,
-    rv.review.abstract ?? null, rv.review.type ?? null, rv.likesCount ?? null,
-    rv.review.range ?? null,
+    rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? '',
+    rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? '',
+    rv.review.abstract ?? '', rv.review.type ?? '', rv.likesCount ?? '',
+    rv.review.range ?? '',
   ]);
 
   if (db.executeMany) {
@@ -576,6 +579,16 @@ async function syncBookContents(
   if (bmActual < bmRows.length || rvActual < rvRows.length) {
     throw new Error(`落库校验失败：划线 ${bmActual}/${bmRows.length}，想法 ${rvActual}/${rvRows.length}`);
   }
+}
+
+/** 可空文本列：'' 哨兵与 null 同等对待（鸿蒙桥写库方案，见 syncBookContents） */
+function nullableStr(v: unknown): string | undefined {
+  return v == null || v === '' ? undefined : String(v);
+}
+
+/** 可空数值列：'' 哨兵与 null 同等对待 */
+function nullableNum(v: unknown): number | null {
+  return v == null || v === '' ? null : Number(v);
 }
 
 // ============ 查询 ============
@@ -816,16 +829,16 @@ export async function queryBookDetail(bookId: string): Promise<BookDetailResult>
     title: String(r.title || ''),
   }));
   const reviews: ReviewItem[] = rvRows.map(r => ({
-    likesCount: r.likesCount == null ? undefined : Number(r.likesCount),
+    likesCount: nullableNum(r.likesCount) ?? undefined,
     review: {
       reviewId: String(r.reviewId), content: String(r.content || ''),
-      htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+      htmlContent: nullableStr(r.htmlContent),
       createTime: Number(r.createTime || 0), star: Number(r.star || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
-      abstract: r.abstract == null ? undefined : String(r.abstract),
-      range: r.range == null ? undefined : String(r.range),
+      chapterName: nullableStr(r.chapterName),
+      abstract: nullableStr(r.abstract),
+      range: nullableStr(r.range),
       chapterUid: r.chapterUid == null ? undefined : Number(r.chapterUid),
-      type: r.type == null ? undefined : Number(r.type),
+      type: nullableNum(r.type) ?? undefined,
     },
   }));
   return { bookmarks, chapters, reviews };
@@ -865,11 +878,11 @@ export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
     bookAuthor: String(r.bookAuthor || ''),
     bookCover: String(r.bookCover || ''),
     content: String(r.content || ''),
-    htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+    htmlContent: nullableStr(r.htmlContent),
     createTime: Number(r.createTime || 0),
     likesCount: Number(r.likesCount || 0),
-    type: r.type == null ? null : Number(r.type),
-    chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+    type: nullableNum(r.type),
+    chapterName: nullableStr(r.chapterName),
   }));
 }
 
@@ -938,7 +951,7 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
       .map(r => ({
         kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
         content: String(r.content || ''),
-        htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+        htmlContent: nullableStr(r.htmlContent),
         createTime: Number(r.createTime || 0),
         targetId: String(r.reviewId),
         book: toBook(r),
@@ -1009,7 +1022,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
       targetId: String(r.bookmarkId),
       content: String(r.markText || ''),
       createTime: Number(r.createTime || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+      chapterName: nullableStr(r.chapterName),
     })),
     ...rvHits.map(r => ({
       kind: 'thought' as const,
@@ -1017,7 +1030,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
       targetId: String(r.reviewId),
       content: String(r.content || ''),
       createTime: Number(r.createTime || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+      chapterName: nullableStr(r.chapterName),
     })),
   ];
   results.sort((a, b) => b.createTime - a.createTime);
