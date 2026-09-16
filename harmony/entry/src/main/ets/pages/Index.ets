@@ -163,6 +163,11 @@ class HarmonyBridge {
         status: resp.responseCode,
         body: typeof resp.result === 'string' ? resp.result : '',
       };
+      // 诊断日志：想法接口在鸿蒙直连下返回空列表的排查（仅该接口打印，避免刷屏）
+      if (body.includes('review/list/mine')) {
+        console.info(`[weread-diag] review请求: ${body.slice(0, 150)}`);
+        console.info(`[weread-diag] review响应: HTTP ${result.status} 长度${result.body.length} 头部: ${result.body.slice(0, 300)}`);
+      }
       return result;
     } catch (e) {
       const err = e as BusinessError;
