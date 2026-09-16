@@ -563,6 +563,19 @@ async function syncBookContents(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, row);
     }
   }
+
+  // 落库校验：并发写曾出现"写完但行丢失"（事务被并发批写回滚/吞提交），静默丢数破坏 syncedAt 语义。
+  // 此处读回计数对账，不达标即抛错，让该书进入重试而不是被标记为已同步。
+  const verify = await db.select<{ bm: number; rv: number }>(
+    `SELECT (SELECT COUNT(*) FROM bookmarks WHERE bookId = ?) as bm,
+            (SELECT COUNT(*) FROM reviews WHERE bookId = ?) as rv`,
+    [bookId, bookId],
+  );
+  const bmActual = Number(verify[0]?.bm || 0);
+  const rvActual = Number(verify[0]?.rv || 0);
+  if (bmActual < bmRows.length || rvActual < rvRows.length) {
+    throw new Error(`落库校验失败：划线 ${bmActual}/${bmRows.length}，想法 ${rvActual}/${rvRows.length}`);
+  }
 }
 
 // ============ 查询 ============

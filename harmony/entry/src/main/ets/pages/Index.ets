@@ -22,9 +22,33 @@ interface HttpResult {
 class HarmonyBridge {
   private store: relationalStore.RdbStore | null = null;
   private context: common.UIAbilityContext | null = null;
+  /** 写操作串行队列：RDB 的事务（beginTransaction/commit/rollBack）是连接级全局状态，
+   * 并发批写会互相提交/回滚对方的未落库行，造成静默丢数据（实测 263 本书想法全部丢失） */
+  private writeChain: Promise<void> = Promise.resolve();
 
   setContext(ctx: common.UIAbilityContext): void {
     this.context = ctx;
+  }
+
+  /** 所有写操作排队执行（FIFO）；前序失败不阻塞后续任务，本任务错误正常抛给调用方 */
+  private enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+    const prev = this.writeChain;
+    let release: () => void = () => {};
+    this.writeChain = new Promise<void>((resolve: () => void) => {
+      release = resolve;
+    });
+    return (async (): Promise<T> => {
+      try {
+        await prev;
+      } catch {
+        // 前序任务失败不影响本任务执行
+      }
+      try {
+        return await task();
+      } finally {
+        release();
+      }
+    })();
   }
 
   private async getStore(): Promise<relationalStore.RdbStore> {
@@ -49,40 +73,45 @@ class HarmonyBridge {
 
   /** 执行写语句（DDL/DML）。executeSql 无受影响行数返回，恒返回 0（前端未使用返回值） */
   async dbExecute(sql: string, params?: Array<relationalStore.ValueType>): Promise<number> {
-    try {
-      const store = await this.getStore();
-      await store.executeSql(sql, params ?? []);
-      return 0;
-    } catch (e) {
-      const err = e as BusinessError;
-      throw new Error(`dbExecute 失败: ${err.message} SQL: ${sql.slice(0, 80)}`);
-    }
+    return this.enqueueWrite(async (): Promise<number> => {
+      try {
+        const store = await this.getStore();
+        await store.executeSql(sql, params ?? []);
+        return 0;
+      } catch (e) {
+        const err = e as BusinessError;
+        throw new Error(`dbExecute 失败: ${err.message} SQL: ${sql.slice(0, 80)}`);
+      }
+    });
   }
 
-  /** 批量写：同一 SQL 多组参数在单事务内执行（同步大量行时避免逐条跨桥调用） */
+  /** 批量写：同一 SQL 多组参数在单事务内执行（同步大量行时避免逐条跨桥调用）。
+   * 经串行队列执行，事务不再与其他写操作交错 */
   async dbExecuteBatch(sql: string, paramsList: Array<Array<relationalStore.ValueType>>): Promise<number> {
     if (paramsList.length === 0) {
       return 0;
     }
-    let store: relationalStore.RdbStore;
-    try {
-      store = await this.getStore();
-    } catch (e) {
-      const err = e as BusinessError;
-      throw new Error(`dbExecuteBatch 获取连接失败: ${err.message}`);
-    }
-    store.beginTransaction();
-    try {
-      for (const params of paramsList) {
-        await store.executeSql(sql, params);
+    return this.enqueueWrite(async (): Promise<number> => {
+      let store: relationalStore.RdbStore;
+      try {
+        store = await this.getStore();
+      } catch (e) {
+        const err = e as BusinessError;
+        throw new Error(`dbExecuteBatch 获取连接失败: ${err.message}`);
       }
-      store.commit();
-      return paramsList.length;
-    } catch (e) {
-      store.rollBack();
-      const err = e as BusinessError;
-      throw new Error(`dbExecuteBatch 失败: ${err.message} SQL: ${sql.slice(0, 80)} 共 ${paramsList.length} 行`);
-    }
+      store.beginTransaction();
+      try {
+        for (const params of paramsList) {
+          await store.executeSql(sql, params);
+        }
+        store.commit();
+        return paramsList.length;
+      } catch (e) {
+        store.rollBack();
+        const err = e as BusinessError;
+        throw new Error(`dbExecuteBatch 失败: ${err.message} SQL: ${sql.slice(0, 80)} 共 ${paramsList.length} 行`);
+      }
+    });
   }
 
   /** 查询语句，返回行对象数组（数字列为 number，文本列为 string，空为 null） */

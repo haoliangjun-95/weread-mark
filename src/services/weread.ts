@@ -423,11 +423,34 @@ export async function fetchBookReviews(
  * 拉全单本书的想法+书评。
  * 注意：该接口的 synckey 实际是「增量同步 key」而非页码游标——把回包 synckey 传回去
  * 只会得到比它更新的内容（通常为空），按页翻会永远只拿到第一页（实测 70 本书卡在 20 条）。
- * 正确策略：一次请求用大 count 拉尽量多；若仍有缺口且 hasMore=1，再用 synckey 补拉增量。
+ * 且截断时 hasMore 也返回 0（实测 count=100 拉 108 条的书：回 100 条 + hasMore=0），
+ * 翻页循环无法自愈，只能靠一次大 count 拉全（实测 count=200/1000 服务端均支持）。
  * 以回包 totalCount 做完整性校验，reviewId 去重防死循环。
  */
 export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal): Promise<ReviewItem[]> {
-  const PAGE_SIZE = 100;
+  // 网关对不同出口/路径对大 count 的行为不一致：鸿蒙直连下 count=1000 曾整书返回空列表
+  // （落库校验样本：划线 21/21 成功而想法 0/5）。按 1000 → 100 → 20 渐进降级，
+  // 任一档拿到数据或确认真无数据（totalCount=0）即返回。
+  const COUNT_FALLBACKS = [1000, 100, 20];
+  let lastEmpty = false;
+  for (const pageSize of COUNT_FALLBACKS) {
+    const { items, total } = await fetchAllBookReviewsPaged(bookId, pageSize, signal);
+    if (items.length > 0 || total === 0) {
+      return items;
+    }
+    lastEmpty = true;
+  }
+  if (lastEmpty) {
+    console.warn(`[fetchAllBookReviews] ${bookId} 所有 count 档位均返回空，疑似网关异常`);
+  }
+  return [];
+}
+
+async function fetchAllBookReviewsPaged(
+  bookId: string,
+  PAGE_SIZE: number,
+  signal?: AbortSignal,
+): Promise<{ items: ReviewItem[]; total: number }> {
   const all = new Map<string, ReviewItem>();
   let synckey = 0;
   let total = Number.POSITIVE_INFINITY;
@@ -454,7 +477,7 @@ export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal):
   }
 
   if (all.size < total) {
-    console.warn(`[fetchAllBookReviews] ${bookId} 可能不完整：${all.size}/${total}（count 上限或游标停滞）`);
+    console.warn(`[fetchAllBookReviews] ${bookId} 可能不完整：${all.size}/${total}（count=${PAGE_SIZE} 上限或游标停滞）`);
   }
-  return [...all.values()];
+  return { items: [...all.values()], total: total === Number.POSITIVE_INFINITY ? 0 : total };
 }
