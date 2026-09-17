@@ -173,7 +173,8 @@ class HarmonyBridge {
     }
     const dir = this.context.cacheDir;
     const filePath = `${dir}/${fileName}`;
-    const data: Uint8Array = new Uint8Array(buffer.from(this.shareBuffer, 'base64').buffer);
+    // writeSync 要求 ArrayBuffer（传 Uint8Array 会报 Invalid arraybuffer）
+    const data: ArrayBuffer = buffer.from(this.shareBuffer, 'base64').buffer;
     console.info(`[weread-diag] shareFinish: ${fileName} mime=${mime} 解码字节数=${data.byteLength}`);
     const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
