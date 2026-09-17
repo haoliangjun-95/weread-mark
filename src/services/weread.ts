@@ -84,6 +84,12 @@ class ThrottledError extends Error {
 
 const MAX_CONCURRENT_REQUESTS = 6;
 const MIN_REQUEST_INTERVAL_MS = 150; // 全局配速：约 6-7 请求/秒上限
+
+// 连续频控熔断：网关配额耗尽时逐条退避效率极低，连续多次 403 后整体冷却
+// 让配额窗口恢复，比每本书各自退避更高效（实测一轮同步内即可自愈）
+let consecutiveThrottled = 0;
+const THROTTLE_STREAK_LIMIT = 5;
+const COOLDOWN_MS = 90_000;
 let activeCount = 0;
 let lastRequestAt = 0;
 const waitQueue: (() => void)[] = [];
@@ -121,10 +127,19 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     }
     await acquireSlot();
     try {
-      return await requestOnce<T>(params, apiKey, signal);
+      const result = await requestOnce<T>(params, apiKey, signal);
+      consecutiveThrottled = 0; // 任何成功都重置连击
+      return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (!(err instanceof ThrottledError)) throw err;
+      consecutiveThrottled++;
+      if (consecutiveThrottled >= THROTTLE_STREAK_LIMIT) {
+        // 连续频控说明配额整体耗尽：拉长整体冷却并重置计数，避免每本书都白等三轮退避
+        console.warn(`[callApi] 连续 ${consecutiveThrottled} 次频控，整体冷却 ${COOLDOWN_MS / 1000}s 等待配额恢复`);
+        consecutiveThrottled = 0;
+        await new Promise(r => setTimeout(r, COOLDOWN_MS));
+      }
     } finally {
       releaseSlot();
     }
@@ -427,15 +442,23 @@ export async function fetchBookReviews(
  * 翻页循环无法自愈，只能靠一次大 count 拉全（实测 count=200/1000 服务端均支持）。
  * 以回包 totalCount 做完整性校验，reviewId 去重防死循环。
  */
+/** 有效 count 档位记忆：某档拿到过数据后全局复用，避免每本书都把无效档请求一遍
+ *  （降级探测定价高：3 档 = 3 倍请求量，直接放大频控风险） */
+let effectiveReviewPageSize: number | null = null;
+
 export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal): Promise<ReviewItem[]> {
   // 网关对不同出口/路径对大 count 的行为不一致：鸿蒙直连下 count=1000 曾整书返回空列表
   // （落库校验样本：划线 21/21 成功而想法 0/5）。按 1000 → 100 → 20 渐进降级，
   // 任一档拿到数据或确认真无数据（totalCount=0）即返回。
   const COUNT_FALLBACKS = [1000, 100, 20];
+  const order = effectiveReviewPageSize != null
+    ? [effectiveReviewPageSize, ...COUNT_FALLBACKS.filter(c => c !== effectiveReviewPageSize)]
+    : COUNT_FALLBACKS;
   let lastEmpty = false;
-  for (const pageSize of COUNT_FALLBACKS) {
+  for (const pageSize of order) {
     const { items, total } = await fetchAllBookReviewsPaged(bookId, pageSize, signal);
     if (items.length > 0 || total === 0) {
+      if (items.length > 0) effectiveReviewPageSize = pageSize;
       return items;
     }
     lastEmpty = true;
