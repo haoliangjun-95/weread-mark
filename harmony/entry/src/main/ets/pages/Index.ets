@@ -6,6 +6,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
 import { fileUri } from '@kit.CoreFileKit';
+import { systemShare } from '@kit.ShareKit';
 
 /** 单元格值：RDB 无列类型元数据，统一按文本返回，前端用 Number()/String() 显式转换 */
 type CellValue = string | null;
@@ -183,13 +184,26 @@ class HarmonyBridge {
       fileIo.closeSync(file);
       this.shareBuffer = '';
     }
-    const shareWant: Want = {
-      action: 'ohos.want.action.sendData',
+    // Share Kit 系统分享：want+fileUri 直发时接收方（如微信）在应用沙盒下读不到文件，
+    // Share Kit 走系统受控分发，接收方拿到可读副本
+    // utd 标准标识符字符串：general.image / general.pdf / general.html
+    let utdType = 'general.html';
+    if (mime.startsWith('image/')) {
+      utdType = 'general.image';
+    } else if (mime === 'application/pdf') {
+      utdType = 'general.pdf';
+    }
+    const record: systemShare.SharedRecord = {
       uri: fileUri.getUriFromPath(filePath),
-      type: mime,
-      flags: wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION,
+      utd: utdType,
     };
-    this.context.startAbility(shareWant);
+    const sharedData = new systemShare.SharedData(record);
+    const controller = new systemShare.ShareController(sharedData);
+    const options: systemShare.ShareControllerOptions = {
+      selectionMode: systemShare.SelectionMode.SINGLE,
+      previewMode: systemShare.SharePreviewMode.DETAIL,
+    };
+    controller.show(this.context, options);
     return true;
   }
 
