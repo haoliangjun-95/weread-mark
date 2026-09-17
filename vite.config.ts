@@ -111,6 +111,12 @@ export default defineConfig(({ mode }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    // 单文件内联构建（native/harmony）下 Vite 的动态 import preload 宏不会被
+    // 常规替换而残留在产物中（@capacitor-community/sqlite 的 web 实现等），
+    // 运行时报 __VITE_PRELOAD__ is not defined —— 显式定义为 undefined 消除
+    ...(mode === 'native' || mode === 'harmony'
+      ? { '__VITE_PRELOAD__': 'undefined', 'process.env.NODE_ENV': '"production"' }
+      : {}),
   },
   server: {
     strictPort: true,
