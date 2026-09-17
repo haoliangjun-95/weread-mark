@@ -863,11 +863,11 @@ export interface TopReviewItem {
 export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
   const db = await getDb();
   const rows = await db.select<{ [k: string]: unknown }>(
-    `SELECT r.reviewId, r.bookId, r.content, r.htmlContent, r.createTime, r.likesCount, r.type, r.chapterName,
+    `SELECT r.reviewId, r.bookId, r.content, r.htmlContent, r.createTime, CAST(r.likesCount AS INTEGER) AS likesCount, r.type, r.chapterName,
             b.title AS bookTitle, b.author AS bookAuthor, b.cover AS bookCover
      FROM reviews r JOIN books b ON b.bookId = r.bookId
-     WHERE r.likesCount > 0
-     ORDER BY r.likesCount DESC, r.createTime DESC
+     WHERE CAST(r.likesCount AS INTEGER) > 0
+     ORDER BY CAST(r.likesCount AS INTEGER) DESC, r.createTime DESC
      LIMIT ?`,
     [limit],
   );
