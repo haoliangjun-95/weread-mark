@@ -5,18 +5,40 @@
  */
 import { runtimeEnv } from '../services/dbInterface';
 
-/** 鸿蒙 ArkWeb 壳注入的原生分享桥 */
+/** 鸿蒙 ArkWeb 壳注入的原生分享桥（分块传输版） */
 interface HarmonyShareBridge {
-  shareFile(base64: string, fileName: string, mime: string): Promise<boolean>;
+  shareBegin(): Promise<boolean>;
+  shareAppend(chunk: string): Promise<boolean>;
+  shareFinish(fileName: string, mime: string): Promise<boolean>;
+}
+
+/** ArkTS 抛出的错误跨桥后是普通对象，归一为带 message 的 Error（否则显示 [object Object]） */
+function toBridgeError(e: unknown, label: string): Error {
+  if (e && typeof e === 'object') {
+    const obj = e as { message?: unknown };
+    if (typeof obj.message === 'string' && obj.message) return new Error(`${label}: ${obj.message}`);
+    try { return new Error(`${label}: ${JSON.stringify(e)}`); } catch { /* ignore */ }
+  }
+  return new Error(`${label}: ${String(e)}`);
 }
 
 async function shareOnNative(base64: string, fileName: string, mime = 'application/octet-stream'): Promise<void> {
   if (runtimeEnv === 'harmony') {
     const bridge = (window as unknown as { HarmonyBridge?: HarmonyShareBridge }).HarmonyBridge;
-    if (!bridge?.shareFile) {
+    if (!bridge?.shareFinish) {
       throw new Error('鸿蒙分享桥未注入');
     }
-    await bridge.shareFile(base64, fileName, mime);
+    // 分块传输：单参数超限会导致桥调用整体失败（rejection 为对象）
+    const CHUNK = 256 * 1024;
+    try {
+      await bridge.shareBegin();
+      for (let i = 0; i < base64.length; i += CHUNK) {
+        await bridge.shareAppend(base64.slice(i, i + CHUNK));
+      }
+      await bridge.shareFinish(fileName, mime);
+    } catch (e) {
+      throw toBridgeError(e, '分享失败');
+    }
     return;
   }
   const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem');

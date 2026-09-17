@@ -152,21 +152,36 @@ class HarmonyBridge {
   }
 
   /** 把 base64 文件写入缓存目录并调起系统分享面板（导出图片/PDF 的原生出口） */
-  async shareFile(base64: string, fileName: string, mime: string): Promise<boolean> {
+  // 分块传输状态：大 base64（导出图片可达数 MB）超出 javaScriptProxy 单参数上限，
+  // 按 256KB 分片累积，finish 时落盘并分享
+  private shareBuffer: string = '';
+
+  async shareBegin(): Promise<boolean> {
+    this.shareBuffer = '';
+    return true;
+  }
+
+  async shareAppend(chunk: string): Promise<boolean> {
+    this.shareBuffer += chunk;
+    return true;
+  }
+
+  /** 落盘并调起系统分享面板 */
+  async shareFinish(fileName: string, mime: string): Promise<boolean> {
     if (!this.context) {
       throw new Error('UIAbility context 未初始化');
     }
     const dir = this.context.cacheDir;
     const filePath = `${dir}/${fileName}`;
-    const data: Uint8Array = new Uint8Array(buffer.from(base64, 'base64').buffer); // decode
-    console.info(`[weread-diag] shareFile: ${fileName} mime=${mime} 解码字节数=${data.byteLength}`);
+    const data: Uint8Array = new Uint8Array(buffer.from(this.shareBuffer, 'base64').buffer);
+    console.info(`[weread-diag] shareFinish: ${fileName} mime=${mime} 解码字节数=${data.byteLength}`);
     const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       fileIo.writeSync(file.fd, data);
     } finally {
       fileIo.closeSync(file);
+      this.shareBuffer = '';
     }
-    // want 协议调起系统分享面板
     const shareWant: Want = {
       action: 'ohos.want.action.sendData',
       uri: fileUri.getUriFromPath(filePath),
@@ -230,7 +245,7 @@ struct Index {
           // 导致 window.HarmonyBridge 缺失（hilog: native proxy object not found）。
           // onControllerAttached 在任何页面加载前触发，注册必然生效。
           this.controller.registerJavaScriptProxy(this.bridge, 'HarmonyBridge',
-            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost', 'shareFile']);
+            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost', 'shareBegin', 'shareAppend', 'shareFinish']);
         })
         .domStorageAccess(true)
         .databaseAccess(true)
