@@ -1,5 +1,22 @@
 import domtoimage from 'dom-to-image-more';
 import { saveOrShareDataUrl } from './share';
+import { isHarmony } from '../services/dbInterface';
+
+/** 鸿蒙：封面经原生桥取 dataURL（ArkWeb 对 CDN 图片的 CORS 限制绕行） */
+async function fetchCoverViaBridge(url: string): Promise<string> {
+  try {
+    const bridge = (window as unknown as {
+      HarmonyBridge?: { fetchImageBase64?: (u: string) => Promise<string> };
+    }).HarmonyBridge;
+    if (bridge?.fetchImageBase64) {
+      return await bridge.fetchImageBase64(url);
+    }
+  } catch (err) {
+    console.warn('[exportImage] 桥取封面失败：', err);
+  }
+  return '';
+}
+
 import type { ExportStyleType } from '../App';
 
 interface ThoughtEntry {
@@ -120,7 +137,14 @@ export async function exportItemToImage(data: ExportImageData) {
   if (data.bookCover) {
     const img = document.createElement('img');
     img.crossOrigin = 'anonymous';
-    img.src = proxyCoverUrl(data.bookCover);
+    let coverSrc = proxyCoverUrl(data.bookCover);
+    // 鸿蒙 ArkWeb 下 origin 为 null，CDN 图片的 CORS 校验失败导致封面加载不出：
+    // 先经原生桥取回 dataURL（原生 http 无 CORS），同源嵌入对两条渲染链路都安全
+    if (isHarmony) {
+      const dataUrl = await fetchCoverViaBridge(coverSrc);
+      if (dataUrl) coverSrc = dataUrl;
+    }
+    img.src = coverSrc;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
     img.onerror = () => { coverDiv.textContent = '📖'; };
     coverDiv.appendChild(img);

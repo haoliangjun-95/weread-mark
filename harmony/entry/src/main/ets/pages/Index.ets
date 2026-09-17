@@ -153,6 +153,30 @@ class HarmonyBridge {
   }
 
   /** 把 base64 文件写入缓存目录并调起系统分享面板（导出图片/PDF 的原生出口） */
+  /** 原生 GET 图片转 dataURL（绕过 WebView 对 CDN 图片的 CORS 限制，用于导出卡片封面） */
+  async fetchImageBase64(url: string): Promise<string> {
+    const client = http.createHttp();
+    try {
+      const resp = await client.request(url, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 10000,
+      });
+      if (resp.responseCode !== 200) {
+        return '';
+      }
+      const buf = resp.result as ArrayBuffer;
+      const headers = resp.header as Record<string, string>;
+      const mime = headers['content-type'] || 'image/jpeg';
+      return `data:${mime};base64,${buffer.from(buf).toString('base64')}`;
+    } catch {
+      return '';
+    } finally {
+      client.destroy();
+    }
+  }
+
   // 分块传输状态：大 base64（导出图片可达数 MB）超出 javaScriptProxy 单参数上限，
   // 按 256KB 分片累积，finish 时落盘并分享
   private shareBuffer: string = '';
@@ -260,7 +284,7 @@ struct Index {
           // 导致 window.HarmonyBridge 缺失（hilog: native proxy object not found）。
           // onControllerAttached 在任何页面加载前触发，注册必然生效。
           this.controller.registerJavaScriptProxy(this.bridge, 'HarmonyBridge',
-            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost', 'shareBegin', 'shareAppend', 'shareFinish']);
+            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost', 'shareBegin', 'shareAppend', 'shareFinish', 'fetchImageBase64']);
         })
         .domStorageAccess(true)
         .databaseAccess(true)
