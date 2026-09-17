@@ -5,7 +5,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 /** 单元格值：RDB 无列类型元数据，统一按文本返回，前端用 Number()/String() 显式转换 */
-type CellValue = number | string | null;
+type CellValue = string | null;
 
 /** 原生 httpPost 的返回结构（ArkTS 要求对象字面量对应显式类型） */
 interface HttpResult {
@@ -132,13 +132,10 @@ class HarmonyBridge {
           if (resultSet.isColumnNull(i)) {
             row[name] = null;
           } else {
-            // 数字列返回原生 number（根治前端 === 数字比较的字符串雷）；
-            // getLong 对文本列抛异常，回退 getString
-            try {
-              row[name] = resultSet.getLong(i);
-            } catch {
-              row[name] = resultSet.getString(i);
-            }
+            // 统一 getString：华为 RDB 的 getLong 对文本列不抛异常而是宽容返回 0，
+            // 会把书名/内容等文本列整体变成 0（实测）。前端读取端已全面
+            // Number()/nullable* 归一 + SQL 层 CAST，全字符串方案三端安全。
+            row[name] = resultSet.getString(i);
           }
         }
         rows.push(row);
