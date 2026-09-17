@@ -124,7 +124,7 @@ export async function exportItemToImage(data: ExportImageData) {
 
   // ============ 顶部：封面 + 日期区域 ============
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;gap:35px;margin-bottom:45px;';
+  header.style.cssText = 'display:flex;align-items:center;gap:35px;margin-top:18px;margin-bottom:45px;';
 
   // 封面
   const coverWrapper = document.createElement('div');
