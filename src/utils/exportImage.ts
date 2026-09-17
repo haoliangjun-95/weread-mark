@@ -255,15 +255,19 @@ export async function exportItemToImage(data: ExportImageData) {
   await new Promise(resolve => requestAnimationFrame(resolve));
 
   try {
-    // 先转成 SVG，SVG 渲染更准确
-    const svgDataUrl = await domtoimage.toSvg(card, {
-      bgcolor: colors.cardBg,
-    });
+    let dataUrl: string;
+    try {
+      // 先转成 SVG，SVG 渲染更准确（部分 WebView 如鸿蒙 ArkWeb 不支持
+      // foreignObject SVG，加载失败时回退 html2canvas 纯 canvas 方案）
+      const svgDataUrl = await domtoimage.toSvg(card, {
+        bgcolor: colors.cardBg,
+      });
     // 从 SVG data URL 创建图片
     const img = new Image();
     await new Promise((resolve, reject) => {
       img.onload = resolve;
-      img.onerror = reject;
+      // 裸 reject(Event) 会让上层 catch 显示 [object Event]，改为可读错误
+      img.onerror = () => reject(new Error('SVG 图片加载失败（当前 WebView 可能不支持 foreignObject）'));
       img.src = svgDataUrl;
     });
     // 绘制到 canvas
@@ -273,7 +277,18 @@ export async function exportItemToImage(data: ExportImageData) {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(2, 2);
     ctx.drawImage(img, 0, 0);
-    const dataUrl = canvas.toDataURL('image/png');
+      dataUrl = canvas.toDataURL('image/png');
+    } catch (svgErr) {
+      console.warn('[exportImage] SVG 链路失败，回退 html2canvas：', svgErr);
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(card, {
+        backgroundColor: colors.cardBg,
+        scale: 2,
+        useCORS: false,
+        allowTaint: false,
+      });
+      dataUrl = canvas.toDataURL('image/png');
+    }
     // Web/桌面走下载；移动 App 调起系统分享面板
     await saveOrShareDataUrl(dataUrl, `${data.bookTitle}-笔记-${Date.now()}.png`);
   } finally {
