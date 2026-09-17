@@ -1,8 +1,11 @@
 import { webview } from '@kit.ArkWeb';
 import { relationalStore } from '@kit.ArkData';
 import { http } from '@kit.NetworkKit';
-import { common } from '@kit.AbilityKit';
+import { common, want, wantConstant } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { buffer } from '@kit.ArkTS';
+import { fileUri } from '@kit.CoreFileKit';
 
 /** 单元格值：RDB 无列类型元数据，统一按文本返回，前端用 Number()/String() 显式转换 */
 type CellValue = string | null;
@@ -148,6 +151,31 @@ class HarmonyBridge {
     }
   }
 
+  /** 把 base64 文件写入缓存目录并调起系统分享面板（导出图片/PDF 的原生出口） */
+  async shareFile(base64: string, fileName: string, mime: string): Promise<boolean> {
+    if (!this.context) {
+      throw new Error('UIAbility context 未初始化');
+    }
+    const dir = this.context.cacheDir;
+    const filePath = `${dir}/${fileName}`;
+    const data: Uint8Array = buffer.from(base64, 'base64').buffer; // decode
+    const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    try {
+      fileIo.writeSync(file.fd, data);
+    } finally {
+      fileIo.closeSync(file);
+    }
+    // want 协议调起系统分享面板
+    const shareWant: want.Want = {
+      action: 'ohos.want.action.sendData',
+      uri: fileUri.getUriFromPath(filePath),
+      type: mime,
+      flags: wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION,
+    };
+    this.context.startAbility(shareWant);
+    return true;
+  }
+
   /** 原生 POST 转发到微信读书网关（WebView 内 fetch 有 CORS 限制） */
   async httpPost(path: string, headers: Record<string, string>, body: string): Promise<HttpResult> {
     const realUrl = `https://i.weread.qq.com/${path}`;
@@ -201,7 +229,7 @@ struct Index {
           // 导致 window.HarmonyBridge 缺失（hilog: native proxy object not found）。
           // onControllerAttached 在任何页面加载前触发，注册必然生效。
           this.controller.registerJavaScriptProxy(this.bridge, 'HarmonyBridge',
-            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost']);
+            ['dbExecute', 'dbExecuteBatch', 'dbSelect', 'httpPost', 'shareFile']);
         })
         .domStorageAccess(true)
         .databaseAccess(true)
