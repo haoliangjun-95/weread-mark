@@ -182,7 +182,7 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
       // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
       if (isNativeApp) {
         await printOrShareHtml(html, `${bookTitle}-笔记成书.html`);
-        showToast('已生成，请选择保存或分享', 'success');
+        showToast('已生成 PDF，请选择保存或分享', 'success');
       } else {
         const iframe = document.createElement('iframe');
         iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
@@ -656,7 +656,7 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
       // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
       if (isNativeApp) {
         await printOrShareHtml(html, `${book.title}-笔记成书.html`);
-        showToast('已生成，请选择保存或分享', 'success');
+        showToast('已生成 PDF，请选择保存或分享', 'success');
       } else {
         const iframe = document.createElement('iframe');
         iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';

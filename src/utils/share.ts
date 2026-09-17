@@ -86,7 +86,10 @@ export async function shareTextFile(content: string, fileName: string): Promise<
  */
 export async function printOrShareHtml(html: string, fileName: string): Promise<boolean> {
   if (runtimeEnv !== 'web') {
-    await shareTextFile(html, fileName);
+    // 原生端生成真正的 PDF 文件（canvas 光栅化，无需中文字体包）后分享
+    const { htmlToPdfAndShare } = await import('./exportPdfNative');
+    const pdfName = fileName.replace(/\.html?$/, '') + '.pdf';
+    await htmlToPdfAndShare(html, pdfName);
     return true;
   }
   const win = window.open('', '_blank');
