@@ -159,6 +159,7 @@ class HarmonyBridge {
     const dir = this.context.cacheDir;
     const filePath = `${dir}/${fileName}`;
     const data: Uint8Array = new Uint8Array(buffer.from(base64, 'base64').buffer); // decode
+    console.info(`[weread-diag] shareFile: ${fileName} mime=${mime} 解码字节数=${data.byteLength}`);
     const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       fileIo.writeSync(file.fd, data);

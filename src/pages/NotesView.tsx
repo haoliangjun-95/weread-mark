@@ -1025,7 +1025,7 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                         showToast('图片已导出', 'success');
                       } catch (err) {
                         console.error('导出图片失败：', err);
-                        showToast('导出图片失败，请重试', 'error');
+                        showToast(`导出图片失败：${err instanceof Error ? err.message : String(err)}`, 'error');
                       } finally {
                         setExportingId(null);
                       }
@@ -1089,7 +1089,7 @@ function NotesContent({ book, bookmarks, reviews, formatDate, formatChineseDate,
                       showToast(`已导出 ${sortedBookReviews.length} 张图片`, 'success');
                     } catch (err) {
                       console.error('导出图片失败：', err);
-                      showToast('导出图片失败，请重试', 'error');
+                      showToast(`导出图片失败：${err instanceof Error ? err.message : String(err)}`, 'error');
                     } finally {
                       setExportingReviewId(null);
                     }

@@ -363,7 +363,7 @@ function ReviewCard({ item }: { item: MyReview }) {
                 showToast('图片已导出', 'success');
               } catch (err) {
                 console.error('导出图片失败：', err);
-                showToast('导出图片失败，请重试', 'error');
+                showToast(`导出图片失败：${err instanceof Error ? err.message : String(err)}`, 'error');
               } finally {
                 setExporting(false);
               }
