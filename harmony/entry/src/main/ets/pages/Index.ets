@@ -1,7 +1,7 @@
 import { webview } from '@kit.ArkWeb';
 import { relationalStore } from '@kit.ArkData';
 import { http } from '@kit.NetworkKit';
-import { common, want, wantConstant } from '@kit.AbilityKit';
+import { common, Want, wantConstant } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { buffer } from '@kit.ArkTS';
@@ -158,7 +158,7 @@ class HarmonyBridge {
     }
     const dir = this.context.cacheDir;
     const filePath = `${dir}/${fileName}`;
-    const data: Uint8Array = buffer.from(base64, 'base64').buffer; // decode
+    const data: Uint8Array = new Uint8Array(buffer.from(base64, 'base64').buffer); // decode
     const file = fileIo.openSync(filePath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       fileIo.writeSync(file.fd, data);
@@ -166,7 +166,7 @@ class HarmonyBridge {
       fileIo.closeSync(file);
     }
     // want 协议调起系统分享面板
-    const shareWant: want.Want = {
+    const shareWant: Want = {
       action: 'ohos.want.action.sendData',
       uri: fileUri.getUriFromPath(filePath),
       type: mime,
