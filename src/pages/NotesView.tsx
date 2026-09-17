@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/weread';
 import { fetchBookmarks, fetchAllBookReviews } from '../services/weread';
 import { getNotebooks, getBookDetail } from '../services/dataService';
-import { isCapacitor } from '../services/dbInterface';
+import { isNativeApp } from '../services/dbInterface';
 import { printOrShareHtml } from '../utils/share';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
@@ -180,7 +180,7 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </html>`;
 
       // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
-      if (isCapacitor) {
+      if (isNativeApp) {
         await printOrShareHtml(html, `${bookTitle}-笔记成书.html`);
         showToast('已生成，请选择保存或分享', 'success');
       } else {
@@ -654,7 +654,7 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </html>`;
 
       // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
-      if (isCapacitor) {
+      if (isNativeApp) {
         await printOrShareHtml(html, `${book.title}-笔记成书.html`);
         showToast('已生成，请选择保存或分享', 'success');
       } else {
