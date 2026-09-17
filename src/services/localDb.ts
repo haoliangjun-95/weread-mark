@@ -899,11 +899,19 @@ export interface OnThisDayItem {
 export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
   const db = await getDb();
   const now = new Date();
-  const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  // SQL 只做年份粗筛（今年元旦之前的全部记录），月日匹配放 JS 端——
-  // 避免 strftime 的 'localtime' 修饰符在各端 SQLite 编译选项下的兼容差异（华为 RDB 曾静默失败）
-  const thisYearStart = Math.floor(new Date(now.getFullYear(), 0, 1).getTime() / 1000);
-  const scanLimit = 5000; // 粗筛扫描上限
+
+  // 精确区间法：为每个历年构造「当年今天 00:00:00 ~ 23:59:59」的本地时间戳区间，
+  // WHERE createTime BETWEEN 区间 OR 连接。纯数字比较——
+  // 不用 strftime/localtime（华为 RDB 兼容问题），也不用固定窗口粗筛（实测
+  // DESC LIMIT 5000 只覆盖最近几个月，9 月的记录永远落在窗口外导致查询为空）。
+  const ranges: Array<[number, number]> = [];
+  for (let y = now.getFullYear() - 1; y >= now.getFullYear() - 15 && y >= 2015; y--) {
+    const start = Math.floor(new Date(y, now.getMonth(), now.getDate(), 0, 0, 0).getTime() / 1000);
+    const end = Math.floor(new Date(y, now.getMonth(), now.getDate(), 23, 59, 59).getTime() / 1000);
+    ranges.push([start, end]);
+  }
+  const timeCond = ranges.map(() => '?? BETWEEN ? AND ?').join(' OR ');
+  const rangeParams = ranges.flat();
 
   const toBook = (r: { [k: string]: unknown }): BookItem => ({
     bookId: String(r.bookId), title: String(r.title || ''), author: String(r.author || ''),
@@ -912,50 +920,41 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
     updateTime: Number(r.readUpdateTime || 0), isTop: 0, secret: 0,
   });
 
-  const isOnThisDay = (ts: number): boolean => {
-    const d = new Date(ts * 1000);
-    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === monthDay;
-  };
-
   const [bmHits, rvHits] = await Promise.all([
     db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               bm.bookmarkId, bm.markText, bm.createTime
        FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
-       WHERE bm.createTime < ?
-       ORDER BY bm.createTime DESC LIMIT ?`,
-      [thisYearStart, scanLimit],
+       WHERE ${timeCond.replace(/\?\?/g, 'bm.createTime')}
+       ORDER BY bm.createTime ASC LIMIT ?`,
+      [...rangeParams, limit],
     ),
     db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               r.reviewId, r.content, r.htmlContent, r.createTime, r.type
        FROM reviews r JOIN books b ON b.bookId = r.bookId
-       WHERE r.createTime < ?
-       ORDER BY r.createTime DESC LIMIT ?`,
-      [thisYearStart, scanLimit],
+       WHERE ${timeCond.replace(/\?\?/g, 'r.createTime')}
+       ORDER BY r.createTime ASC LIMIT ?`,
+      [...rangeParams, limit],
     ),
   ]);
 
   const items: OnThisDayItem[] = [
-    ...bmHits
-      .filter(r => isOnThisDay(Number(r.createTime || 0)))
-      .map(r => ({
-        kind: 'highlight' as const,
-        content: String(r.markText || ''),
-        createTime: Number(r.createTime || 0),
-        targetId: String(r.bookmarkId),
-        book: toBook(r),
-      })),
-    ...rvHits
-      .filter(r => isOnThisDay(Number(r.createTime || 0)))
-      .map(r => ({
-        kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
-        content: String(r.content || ''),
-        htmlContent: nullableStr(r.htmlContent),
-        createTime: Number(r.createTime || 0),
-        targetId: String(r.reviewId),
-        book: toBook(r),
-      })),
+    ...bmHits.map(r => ({
+      kind: 'highlight' as const,
+      content: String(r.markText || ''),
+      createTime: Number(r.createTime || 0),
+      targetId: String(r.bookmarkId),
+      book: toBook(r),
+    })),
+    ...rvHits.map(r => ({
+      kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
+      content: String(r.content || ''),
+      htmlContent: nullableStr(r.htmlContent),
+      createTime: Number(r.createTime || 0),
+      targetId: String(r.reviewId),
+      book: toBook(r),
+    })),
   ];
   items.sort((a, b) => b.createTime - a.createTime);
   return items.slice(0, limit);
