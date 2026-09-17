@@ -210,12 +210,11 @@ class HarmonyBridge {
     }
     // Share Kit 系统分享：want+fileUri 直发时接收方（如微信）在应用沙盒下读不到文件，
     // Share Kit 走系统受控分发，接收方拿到可读副本
-    // utd 标准标识符字符串：general.image / general.pdf / general.html
-    let utdType = 'general.html';
+    // utd 标准标识符：general.image 微信已验证可收；PDF/HTML 用 general.file——
+    // 微信等接收方未声明支持 general.pdf/general.html（面板不显示），通用文件类型以文件形式发送
+    let utdType = 'general.file';
     if (mime.startsWith('image/')) {
       utdType = 'general.image';
-    } else if (mime === 'application/pdf') {
-      utdType = 'general.pdf';
     }
     const record: systemShare.SharedRecord = {
       uri: fileUri.getUriFromPath(filePath),
