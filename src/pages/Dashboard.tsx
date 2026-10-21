@@ -518,8 +518,8 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
          ))}
        </div>
 
-      {/* 活跃热力图：置于图表区顶部（最近30天趋势之上） */}
-      <ActivityHeatmapCard />
+      {/* 活跃热力图：置于图表区顶部（最近30天趋势之上），年份随看板选择联动 */}
+      <ActivityHeatmapCard year={selectedYear} />
 
       {/* Charts（recharts 懒加载分包） */}
       {chartData && (

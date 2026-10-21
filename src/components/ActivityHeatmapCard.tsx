@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { queryDayCounts, queryReportYears, isNativeApp } from '../services/localDb';
-import { onLocalReady, isSynced } from '../services/dataService';
+import { queryDayCounts, isNativeApp } from '../services/localDb';
+import { isSynced } from '../services/dataService';
 import { fetchReadingStats } from '../services/weread';
 import { buildYearGrid, intensityOf, mergeReadTimesToDaily } from '../utils/heatmap';
 
@@ -15,36 +15,17 @@ import { buildYearGrid, intensityOf, mergeReadTimesToDaily } from '../utils/heat
 /** 热力颜色（绿色 5 档，level 0 = 无数据底色） */
 const LEVEL_COLORS = ['#c6e48b', '#7bc96f', '#49af5d', '#2e8840', '#196127'];
 
-export default function ActivityHeatmapCard() {
+interface ActivityHeatmapCardProps {
+  /** 与看板年份选择联动（看板头部「年份」下拉所选年份） */
+  year: number;
+}
+
+export default function ActivityHeatmapCard({ year }: ActivityHeatmapCardProps) {
   const currentYear = new Date().getFullYear();
-  const [years, setYears] = useState<number[]>([currentYear, currentYear - 1]);
-  const [year, setYear] = useState(currentYear);
   const [counts, setCounts] = useState<Record<string, number>>({});
   /** counts 对应的年份；与 year 不一致即加载中（派生，避免 effect 内同步 setState） */
   const [countsYear, setCountsYear] = useState<number | null>(null);
   const [unit, setUnit] = useState<'条' | '分钟'>('条');
-
-  // 原生端：有痕迹的年份列表（挂载与本地库就绪时刷新；setState 均在 await 之后）
-  useEffect(() => {
-    if (!isNativeApp) return;
-    let cancelled = false;
-    const refresh = () => {
-      void (async () => {
-        try {
-          const [ys, ok] = await Promise.all([queryReportYears(), isSynced()]);
-          if (cancelled || !ok) return;
-          const list = ys.length ? ys.slice(0, 6) : [currentYear];
-          setYears(list);
-          setYear(prev => list.includes(prev) ? prev : list[0]);
-        } catch (err) {
-          console.warn('[Heatmap] 年份加载失败：', err);
-        }
-      })();
-    };
-    refresh();
-    const off = onLocalReady(refresh);
-    return () => { cancelled = true; off(); };
-  }, [currentYear]);
 
   // 切年加载每日计数
   useEffect(() => {
@@ -114,24 +95,12 @@ export default function ActivityHeatmapCard() {
             </span>
           )}
         </div>
-        <div className="flex gap-1">
-          {years.map(y => (
-            <button
-              key={y}
-              type="button"
-              onClick={() => setYear(y)}
-              className="rounded-full px-3 py-1 text-xs font-medium transition-all"
-              style={{
-                backgroundColor: y === year ? 'var(--accent-color)' : 'var(--bg-secondary)',
-                color: y === year ? 'var(--accent-contrast)' : 'var(--text-secondary)',
-                border: '1px solid',
-                borderColor: y === year ? 'var(--accent-color)' : 'var(--border-light)',
-              }}
-            >
-              {y}
-            </button>
-          ))}
-        </div>
+        <span
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-mono"
+          style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}
+        >
+          {year}
+        </span>
       </div>
 
       {loading ? (
