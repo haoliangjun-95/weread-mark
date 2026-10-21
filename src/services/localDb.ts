@@ -1059,3 +1059,218 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
   results.sort((a, b) => b.createTime - a.createTime);
   return results;
 }
+
+// ============ 年度阅读报告 ============
+
+export interface AnnualReportData {
+  year: number;
+  /** 年内划线条数 */
+  totalMarks: number;
+  /** 年内想法数（type != 4） */
+  totalThoughts: number;
+  /** 年内书评数（type = 4） */
+  totalReviews: number;
+  /** 年内收到的点赞总数 */
+  likesReceived: number;
+  /** 每月痕迹数（划线+想法+书评，下标 0-11） */
+  monthActivity: number[];
+  /** 年内最活跃的 5 本书（按痕迹数） */
+  topBooks: Array<{
+    bookId: string; title: string; author: string; cover: string;
+    marks: number; thoughts: number;
+  }>;
+  /** 年内点赞最高的想法/书评 */
+  topReview: { content: string; createTime: number; likesCount: number; bookTitle: string } | null;
+  /** 年内第一条划线 */
+  firstMark: { content: string; createTime: number; bookTitle: string } | null;
+  /**
+   * 年度阅读时长（分钟）：由统计快照年初/年末差值计算。
+   * 快照自 2026-10 功能上线才开始积累，覆盖不满整年时为 null（界面不展示）。
+   */
+  readingMinutes: number | null;
+  /** 年内读完本数增量（同样依赖快照覆盖，否则 null） */
+  finishedDelta: number | null;
+}
+
+/** 有笔记活动（划线/想法/书评）的年份列表，降序 */
+export async function queryReportYears(): Promise<number[]> {
+  const db = await getDb();
+  const [bmYears, rvYears] = await Promise.all([
+    db.select<{ bucket: number }>('SELECT DISTINCT CAST(createTime / 31536000 AS INTEGER) AS bucket FROM bookmarks WHERE createTime > 0'),
+    db.select<{ bucket: number }>('SELECT DISTINCT CAST(createTime / 31536000 AS INTEGER) AS bucket FROM reviews WHERE createTime > 0'),
+  ]);
+  // 31536000 是平均年长，仅用于粗分桶去重（跨年边界误差无碍：JS 侧按真实日期归年）
+  const candidates = new Set<number>();
+  const expand = (bucket: number) => {
+    const base = 1970 + bucket;
+    candidates.add(base);
+    candidates.add(base - 1); // 桶边界落在下一年 1 月初的记录
+  };
+  bmYears.forEach(r => expand(Number(r.bucket)));
+  rvYears.forEach(r => expand(Number(r.bucket)));
+  const currentYear = new Date().getFullYear();
+  return [...candidates].filter(y => y >= 2010 && y <= currentYear).sort((a, b) => b - a);
+}
+
+/**
+ * 年度报告聚合：痕迹类统计按 createTime 区间精确计算（纯数字比较，
+ * 不用 SQL 日期函数——鸿蒙 RDB 对 strftime/localtime 兼容性差）。
+ */
+export async function queryAnnualReport(year: number): Promise<AnnualReportData> {
+  const db = await getDb();
+  const start = Math.floor(new Date(year, 0, 1).getTime() / 1000);
+  const end = Math.floor(new Date(year + 1, 0, 1).getTime() / 1000);
+
+  const [bmRows, rvRows, firstMarkRow] = await Promise.all([
+    db.select<{ bookId: unknown; createTime: unknown }>(
+      'SELECT bookId, createTime FROM bookmarks WHERE createTime >= ? AND createTime < ?', [start, end]),
+    db.select<{ bookId: unknown; createTime: unknown; type: unknown; likesCount: unknown }>(
+      'SELECT bookId, createTime, type, likesCount FROM reviews WHERE createTime >= ? AND createTime < ?', [start, end]),
+    db.select<{ [k: string]: unknown }>(
+      `SELECT bm.markText, bm.createTime, b.title FROM bookmarks bm
+       JOIN books b ON b.bookId = bm.bookId
+       WHERE bm.createTime >= ? AND bm.createTime < ? AND bm.markText != ''
+       ORDER BY bm.createTime ASC LIMIT 1`, [start, end]),
+  ]);
+
+  const monthActivity = new Array(12).fill(0);
+  const bookAgg = new Map<string, { marks: number; thoughts: number }>();
+
+  for (const r of bmRows) {
+    const d = new Date(Number(r.createTime) * 1000);
+    if (d.getFullYear() === year) monthActivity[d.getMonth()]++;
+    const bookId = String(r.bookId);
+    const agg = bookAgg.get(bookId) || { marks: 0, thoughts: 0 };
+    agg.marks++;
+    bookAgg.set(bookId, agg);
+  }
+
+  let totalThoughts = 0;
+  let totalReviews = 0;
+  let likesReceived = 0;
+  for (const r of rvRows) {
+    const d = new Date(Number(r.createTime) * 1000);
+    if (d.getFullYear() === year) monthActivity[d.getMonth()]++;
+    const isReview = Number(r.type) === 4;
+    if (isReview) totalReviews++; else totalThoughts++;
+    likesReceived += Number(r.likesCount || 0);
+    const bookId = String(r.bookId);
+    const agg = bookAgg.get(bookId) || { marks: 0, thoughts: 0 };
+    agg.thoughts++;
+    bookAgg.set(bookId, agg);
+  }
+
+  const topBookIds = [...bookAgg.entries()]
+    .sort((a, b) => (b[1].marks + b[1].thoughts) - (a[1].marks + a[1].thoughts))
+    .slice(0, 5)
+    .map(([id]) => id);
+  const topBookRows = topBookIds.length
+    ? await db.select<{ [k: string]: unknown }>(
+        `SELECT bookId, title, author, cover FROM books WHERE bookId IN (${topBookIds.map(() => '?').join(',')})`,
+        topBookIds)
+    : [];
+  const bookMeta = new Map(topBookRows.map(r => [String(r.bookId), r]));
+  const topBooks = topBookIds.map(id => {
+    const meta = bookMeta.get(id);
+    const agg = bookAgg.get(id)!;
+    return {
+      bookId: id,
+      title: String(meta?.title || '未知书名'),
+      author: String(meta?.author || ''),
+      cover: String(meta?.cover || ''),
+      marks: agg.marks,
+      thoughts: agg.thoughts,
+    };
+  });
+
+  const topReviewRow = await db.select<{ [k: string]: unknown }>(
+    `SELECT r.content, r.createTime, CAST(r.likesCount AS INTEGER) AS likesCount, b.title AS bookTitle
+     FROM reviews r JOIN books b ON b.bookId = r.bookId
+     WHERE r.createTime >= ? AND r.createTime < ? AND CAST(r.likesCount AS INTEGER) > 0
+       AND r.content != ''
+     ORDER BY CAST(r.likesCount AS INTEGER) DESC, r.createTime DESC LIMIT 1`, [start, end]);
+
+  // 阅读时长/读完增量：年初、年末各取一个最近的快照，要求年初快照早于 1 月 31 日
+  // （否则视为覆盖不足，例如 2026 年快照只从 10 月开始积累）
+  const snapshots = await queryStatsSnapshots();
+  const yearStartStr = `${year}-01-01`;
+  const yearEndStr = `${year + 1}-01-01`;
+  const atOrBefore = (dateStr: string) => {
+    let found: StatsSnapshotRow | null = null;
+    for (const row of snapshots) {
+      if (row.date < dateStr) found = row; else break;
+    }
+    return found;
+  };
+  const lastInYear = (() => {
+    let found: StatsSnapshotRow | null = null;
+    for (const row of snapshots) {
+      if (row.date < yearEndStr) found = row;
+    }
+    return found;
+  })();
+  const startSnap = atOrBefore(yearStartStr);
+  let readingMinutes: number | null = null;
+  let finishedDelta: number | null = null;
+  if (startSnap && startSnap.date >= `${year - 1}-12-01` && lastInYear) {
+    readingMinutes = Math.max(0, lastInYear.totalReadTime - startSnap.totalReadTime);
+    finishedDelta = Math.max(0, lastInYear.finishedCount - startSnap.finishedCount);
+  }
+
+  return {
+    year,
+    totalMarks: bmRows.length,
+    totalThoughts,
+    totalReviews,
+    likesReceived,
+    monthActivity,
+    topBooks,
+    topReview: topReviewRow[0] ? {
+      content: String(topReviewRow[0].content || ''),
+      createTime: Number(topReviewRow[0].createTime || 0),
+      likesCount: Number(topReviewRow[0].likesCount || 0),
+      bookTitle: String(topReviewRow[0].bookTitle || ''),
+    } : null,
+    firstMark: firstMarkRow[0] ? {
+      content: String(firstMarkRow[0].markText || ''),
+      createTime: Number(firstMarkRow[0].createTime || 0),
+      bookTitle: String(firstMarkRow[0].title || ''),
+    } : null,
+    readingMinutes,
+    finishedDelta,
+  };
+}
+
+// ============ 全库导出 ============
+
+export interface FullExportData {
+  exportedAt: number;
+  lastSyncAt: number | null;
+  books: Array<Record<string, unknown>>;
+  bookmarks: Array<Record<string, unknown>>;
+  reviews: Array<Record<string, unknown>>;
+  statsSnapshots: StatsSnapshotRow[];
+}
+
+/** 全库导出（JSON 备份用）：一次性读出全部业务表原始行 */
+export async function queryAllForExport(): Promise<FullExportData> {
+  const db = await getDb();
+  const [books, bookmarks, reviews, snapshots, meta] = await Promise.all([
+    db.select<{ [k: string]: unknown }>(
+      'SELECT bookId, title, author, cover, category, readUpdateTime, finishReading, bookmarkCount, reviewCount, readingProgress FROM books ORDER BY sort ASC'),
+    db.select<{ [k: string]: unknown }>(
+      'SELECT bookmarkId, bookId, chapterUid, markText, createTime, type, range, colorStyle FROM bookmarks ORDER BY createTime ASC'),
+    db.select<{ [k: string]: unknown }>(
+      'SELECT reviewId, bookId, content, htmlContent, createTime, star, chapterName, abstract, type, likesCount, range FROM reviews ORDER BY createTime ASC'),
+    queryStatsSnapshots(),
+    db.select<{ value: unknown }>("SELECT value FROM sync_meta WHERE key = 'last_sync_at'"),
+  ]);
+  return {
+    exportedAt: Math.floor(Date.now() / 1000),
+    lastSyncAt: meta[0] ? Number(meta[0].value) || null : null,
+    books: books as unknown as Array<Record<string, unknown>>,
+    bookmarks: bookmarks as unknown as Array<Record<string, unknown>>,
+    reviews: reviews as unknown as Array<Record<string, unknown>>,
+    statsSnapshots: snapshots,
+  };
+}

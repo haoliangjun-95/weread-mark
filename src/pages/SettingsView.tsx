@@ -5,7 +5,8 @@ import authorQr from '../assets/author.jpg';
 import { getApiKey, setApiKey, validateApiKey } from '../services/weread';
 import { syncAll, getLocalStats, getSyncStatus, getDbDirInfo, changeDbDir, isTauri, isHarmony, isNativeApp } from '../services/localDb';
 import type { SyncProgress, LocalStats, DbDirInfo, SyncResult } from '../services/localDb';
-import { markSynced } from '../services/dataService';
+import { markSynced, isSynced, onLocalReady } from '../services/dataService';
+import { exportAllJson, exportBooksCsv, exportBookmarksCsv, exportReviewsCsv } from '../utils/exportData';
 import { open } from '@tauri-apps/plugin-dialog';
 import type { OpenDialogOptions } from '@tauri-apps/plugin-dialog';
 import { showToast } from '../utils/toast';
@@ -27,6 +28,7 @@ interface SettingsViewProps {
 }
 
 const themes: { key: ThemeType; label: string; desc: string; icon: string; bg: string; border: string; activeBg: string; activeBorder: string; swatch: string; previewText: string; previewMuted: string }[] = [
+  { key: 'auto', label: '自动', desc: '跟随系统深浅色', icon: '◐', bg: 'linear-gradient(135deg,#ffffff 0%,#ffffff 49%,#182133 51%,#182133 100%)', border: '#c7d2e0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: 'linear-gradient(135deg,#ffffff 50%,#182133 50%)', previewText: '#1f2937', previewMuted: '#5b6472' },
   { key: 'default', label: '默认', desc: '清新蓝白', icon: '☀️', bg: '#ffffff', border: '#dfe7f0', activeBg: '#e8f1ff', activeBorder: '#2367d9', swatch: '#2367d9', previewText: '#1f2937', previewMuted: '#5b6472' },
   { key: 'dark', label: '深色', desc: '深邃暗夜', icon: '🌙', bg: '#182133', border: '#263449', activeBg: '#203a5e', activeBorder: '#8fc0ff', swatch: '#5aa2ff', previewText: '#e5edff', previewMuted: '#9db1cf' },
   { key: 'eye', label: '护眼', desc: '暖茶书卷', icon: '◐', bg: '#fffaf0', border: '#e4d7ba', activeBg: '#eee5d0', activeBorder: '#5c4b36', swatch: '#736145', previewText: '#463a27', previewMuted: '#82735a' },
@@ -316,6 +318,64 @@ function StorageDirSection({ disabled, onDone }: { disabled: boolean; onDone: ()
   );
 }
 
+/** 数据导出卡片（仅原生端）：全库 JSON 备份 + 书目/划线/想法 CSV */
+function DataExportCard() {
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void isSynced().then(ok => { if (!cancelled) setReady(ok); });
+    const off = onLocalReady(() => void isSynced().then(ok => { if (!cancelled) setReady(ok); }));
+    return () => { cancelled = true; off(); };
+  }, []);
+
+  const run = async (key: string, task: () => Promise<number | void>) => {
+    if (exporting || !ready) return;
+    setExporting(key);
+    try {
+      const count = await task();
+      showToast(count != null ? `已导出 ${count} 条记录` : '已生成导出文件', 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`导出失败：${msg || '请重试'}`, 'error');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const btn = (key: string, label: string, icon: string, task: () => Promise<number | void>) => (
+    <button
+      type="button"
+      onClick={() => run(key, task)}
+      disabled={!ready || exporting !== null}
+      className="flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)' }}
+    >
+      <span>{icon}</span>
+      {exporting === key ? '导出中...' : label}
+    </button>
+  );
+
+  return (
+    <section className="rounded-2xl border p-5" style={cardStyle}>
+      <SectionTitle
+        title="数据导出"
+        desc={ready ? '全库备份为 JSON，或导出 CSV 供表格软件分析。' : '完成一次本地同步后可导出全库数据。'}
+      />
+      <div className="grid grid-cols-2 gap-2.5">
+        {btn('json', 'JSON 全库备份', '🗄', () => exportAllJson().then(() => undefined))}
+        {btn('books', '书目 CSV', '📚', exportBooksCsv)}
+        {btn('marks', '划线 CSV', '✏️', exportBookmarksCsv)}
+        {btn('reviews', '想法/书评 CSV', '💭', exportReviewsCsv)}
+      </div>
+      <p className="mt-3 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        导出内容来自本地数据库；CSV 带 BOM，Excel 可直接打开中文。
+      </p>
+    </section>
+  );
+}
+
 function SelectedBadge({ color }: { color: string }) {
   return (
     <span
@@ -381,8 +441,9 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
       <div className="lg:hidden mb-6">
         <ApiKeyCard keyExpired={keyExpired} onNavigate={onNavigate} onApiKeyChange={onApiKeyChange} />
         {isNativeApp && (
-          <div className="mt-5">
+          <div className="mt-5 space-y-5">
             <SyncCard />
+            <DataExportCard />
           </div>
         )}
       </div>
@@ -395,6 +456,8 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
           </div>
 
           {isNativeApp && <SyncCard />}
+
+          {isNativeApp && <DataExportCard />}
 
           <section className="rounded-2xl border p-5" style={cardStyle}>
             <SectionTitle title="关于微痕" desc="让阅读留下温柔的痕迹" />
@@ -477,7 +540,7 @@ export default function SettingsView({ theme, onThemeChange, font, onFontChange,
                       >
                         {active && <SelectedBadge color={t.activeBorder} />}
                         <span className="flex items-center gap-3 pr-7">
-                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border text-lg" style={{ backgroundColor: t.swatch, borderColor: t.border, color: t.key === 'paper' ? '#555650' : '#fff' }}>
+                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border text-lg" style={{ backgroundColor: t.swatch, borderColor: t.border, color: t.key === 'paper' ? '#555650' : t.key === 'auto' ? '#2367d9' : '#fff' }}>
                             {t.icon}
                           </span>
                           <span className="min-w-0">

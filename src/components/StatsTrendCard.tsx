@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-} from 'recharts';
+import { lazy, Suspense } from 'react';
 import { queryStatsSnapshots, isNativeApp } from '../services/localDb';
 import type { StatsSnapshotRow } from '../services/localDb';
 import { onLocalReady } from '../services/dataService';
+
+// recharts 单独分包，卡片外壳（标题/统计行）不随图表库一起进主包
+const TrendChart = lazy(() => import('./TrendChart'));
 
 /**
  * 阅读趋势卡片：消费每次同步累积的 stats_snapshots 快照，
@@ -38,13 +39,6 @@ export default function StatsTrendCard() {
   const last = rows[rows.length - 1];
   const noteGrowth = last.noteTotal - first.noteTotal;
 
-  const tooltipStyle = {
-    borderRadius: '12px',
-    border: '1px solid var(--border-color)',
-    backgroundColor: 'var(--tooltip-bg)',
-    color: 'var(--text-primary)',
-  };
-
   return (
     <section
       className="rounded-2xl border p-4 sm:p-6 mb-6"
@@ -60,30 +54,9 @@ export default function StatsTrendCard() {
         </p>
       </div>
       <div style={{ height: 180 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 0, left: -18 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
-            <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Line
-              type="monotone"
-              dataKey="笔记总数"
-              stroke="var(--chart-bar)"
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              isAnimationActive={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="读完"
-              stroke="var(--chart-line)"
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <Suspense fallback={<div className="flex h-full items-center justify-center text-xs" style={{ color: 'var(--text-muted)' }}>图表加载中...</div>}>
+          <TrendChart chartData={chartData} />
+        </Suspense>
       </div>
       <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
         数据随每次同步自动累积，同步越多曲线越完整。

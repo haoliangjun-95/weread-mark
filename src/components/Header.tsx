@@ -13,13 +13,15 @@ const allNavItems: { key: ViewType; label: string; icon: string }[] = [
     { key: 'shelf', label: '书架', icon: '📚' },
     { key: 'reviews', label: '书评墙', icon: '⭐' },
     { key: 'rank', label: '排行榜', icon: '🏆' },
+    { key: 'report', label: '年报', icon: '🎁' },
     { key: 'dashboard', label: '看板', icon: '📊' },
     { key: 'notes', label: '笔记', icon: '📝' },
     { key: 'settings', label: '设置', icon: '⚙️' },
 ];
 
-// 排行榜依赖本地 SQLite 数据，仅在桌面版展示
-const navItems = isNativeApp ? allNavItems : allNavItems.filter(item => item.key !== 'rank');
+// 排行榜/年报依赖本地 SQLite 数据，仅在原生端展示
+const nativeOnlyViews: ViewType[] = ['rank', 'report'];
+const navItems = isNativeApp ? allNavItems : allNavItems.filter(item => !nativeOnlyViews.includes(item.key));
 
 export default function Header({ currentView, onNavigate, hasKey }: HeaderProps) {
     return (

@@ -3,7 +3,7 @@ import type { BookItem, NotebookItem, BookmarkItem, ReviewItem } from '../types/
 import { fetchBookmarks, fetchAllBookReviews } from '../services/weread';
 import { getNotebooks, getBookDetail } from '../services/dataService';
 import { isNativeApp } from '../services/dbInterface';
-import { printOrShareHtml } from '../utils/share';
+import { nativeBookPdfWithFallback } from '../utils/exportPdfText';
 import type { ChapterItem } from '../types/weread';
 import { FilterBar } from '../utils/filters';
 import { collectCategories, applyFilters, useInfiniteScroll } from '../utils/filterUtils';
@@ -179,10 +179,10 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </body>
 </html>`;
 
-      // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
+      // Web/桌面：iframe 静默打印；移动 App：可检索 PDF（缺字自动回退光栅化）
       if (isNativeApp) {
-        await printOrShareHtml(html, `${bookTitle}-笔记成书.html`);
-        showToast('已生成 PDF，请选择保存或分享', 'success');
+        const mode = await nativeBookPdfWithFallback(html, `${bookTitle}-笔记成书.pdf`);
+        showToast(mode === 'text' ? '已生成可检索 PDF，请选择保存或分享' : '已生成 PDF（本次含生僻字，采用图片模式）', 'success');
       } else {
         const iframe = document.createElement('iframe');
         iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';
@@ -653,10 +653,10 @@ ${reviewsHtml ? `<div class="section-title">⭐ 书评</div>${reviewsHtml}` : ''
 </body>
 </html>`;
 
-      // Web/桌面：iframe 静默打印；移动 App：HTML 走系统分享
+      // Web/桌面：iframe 静默打印；移动 App：可检索 PDF（缺字自动回退光栅化）
       if (isNativeApp) {
-        await printOrShareHtml(html, `${book.title}-笔记成书.html`);
-        showToast('已生成 PDF，请选择保存或分享', 'success');
+        const mode = await nativeBookPdfWithFallback(html, `${book.title}-笔记成书.pdf`);
+        showToast(mode === 'text' ? '已生成可检索 PDF，请选择保存或分享' : '已生成 PDF（本次含生僻字，采用图片模式）', 'success');
       } else {
         const iframe = document.createElement('iframe');
         iframe.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;border:none;z-index:99999;';

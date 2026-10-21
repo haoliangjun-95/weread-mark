@@ -6,6 +6,7 @@ import ShelfView from './pages/ShelfView';
 import NotesView from './pages/NotesView';
 import ReviewsView from './pages/ReviewsView';
 import RankView from './pages/RankView';
+import AnnualReportView from './pages/AnnualReportView';
 import SearchView from './pages/SearchView';
 import SettingsView from './pages/SettingsView';
 import Toaster from './components/Toast';
@@ -15,8 +16,8 @@ import { markSynced, handleApiKeyChanged } from './services/dataService';
 import { getApiKey } from './services/weread';
 import type { BookItem } from './types/weread';
 
- export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'settings';
- export type ThemeType = 'default' | 'dark' | 'eye' | 'green' | 'paper' | 'mist' | 'apricot' | 'rose';
+ export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'report' | 'settings';
+ export type ThemeType = 'default' | 'dark' | 'eye' | 'green' | 'paper' | 'mist' | 'apricot' | 'rose' | 'auto';
  export type FontType = 'sans' | 'serif' | 'wenkai' | 'yousong' | 'laosong' | 'notosans' | 'mashan' | 'zcool';
  export type FontSize = 'auto' | 'sm' | 'md' | 'lg' | 'xl' | number;
  export type ExportStyleType = 'classic' | 'paper' | 'dark';
@@ -32,15 +33,16 @@ const THEME_KEY = 'weread-theme';
 const FONT_KEY = 'weread-font';
 const FONT_SIZE_KEY = 'weread-font-size';
 const FONT_SIZE_PRESETS = { sm: 14, md: 16, lg: 18, xl: 20 } as const;
-const VALID_VIEWS: ViewType[] = ['home', 'dashboard', 'shelf', 'notes', 'reviews', 'rank', 'settings'];
-const VALID_THEMES: ThemeType[] = ['default', 'dark', 'eye', 'green', 'paper', 'mist', 'apricot', 'rose'];
+const VALID_VIEWS: ViewType[] = ['home', 'dashboard', 'shelf', 'notes', 'reviews', 'rank', 'report', 'settings'];
+const VALID_THEMES: ThemeType[] = ['default', 'dark', 'eye', 'green', 'paper', 'mist', 'apricot', 'rose', 'auto'];
 const VALID_FONTS: FontType[] = ['sans', 'serif', 'wenkai', 'yousong', 'laosong', 'notosans', 'mashan', 'zcool'];
 const VERSION_KEY = 'weread-app-version';
 
-/** 排行榜依赖本地 SQLite，Web 版不识别该视图（hash 直达时回退看板） */
+/** 排行榜/年报依赖本地 SQLite，Web 版不识别这些视图（hash 直达时回退看板） */
 function isDesktopView(view: ViewType): boolean {
-  // 排行榜依赖本地 SQLite，三端原生环境（桌面/移动/鸿蒙）均可用，仅 Web 不识别
-  return VALID_VIEWS.includes(view) && (view !== 'rank' || isNativeApp);
+  // 三端原生环境（桌面/移动/鸿蒙）均可用，仅 Web 不识别
+  const nativeOnly: ViewType[] = ['rank', 'report'];
+  return VALID_VIEWS.includes(view) && (!nativeOnly.includes(view) || isNativeApp);
 }
 
 function App() {
@@ -111,7 +113,18 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem(THEME_KEY, theme);
-    document.documentElement.className = `theme-${theme}`;
+    // 「自动」主题：跟随系统深浅色，系统切换时实时响应；其余直接应用
+    if (theme !== 'auto') {
+      document.documentElement.className = `theme-${theme}`;
+      return;
+    }
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = () => {
+      document.documentElement.className = `theme-${mq.matches ? 'dark' : 'default'}`;
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
   }, [theme]);
 
    useEffect(() => {
@@ -216,8 +229,11 @@ function App() {
     { key: 'shelf' as ViewType, element: <ShelfView onSelectBook={handleSelectBook} /> },
     { key: 'notes' as ViewType, element: <NotesView selectedBook={selectedBook} onBack={() => { setSelectedBook(null); setNotesBackLabel('返回笔记列表'); if (notesSource) { setCurrentView(notesSource); setNotesSource(null); } }} onSelectBook={handleSelectBook} highlightTarget={highlightTarget} exportStyle={exportStyle} backLabel={notesBackLabel} /> },
     { key: 'reviews' as ViewType, element: <ReviewsView /> },
-    // Web 版不挂载排行榜（依赖本地库，挂载即会发起在线全量扫描）
-    ...(isNativeApp ? [{ key: 'rank' as ViewType, element: <RankView onSelectBook={handleSelectBook} /> }] : []),
+    // Web 版不挂载排行榜/年报（依赖本地库，挂载即会发起在线全量扫描）
+    ...(isNativeApp ? [
+      { key: 'rank' as ViewType, element: <RankView onSelectBook={handleSelectBook} /> },
+      { key: 'report' as ViewType, element: <AnnualReportView /> },
+    ] : []),
     { key: 'settings' as ViewType, element: <SettingsView theme={theme} onThemeChange={setTheme} font={font} onFontChange={setFont} fontSize={fontSize} onFontSizeChange={setFontSize} keyExpired={keyExpired} exportStyle={exportStyle} onExportStyleChange={setExportStyle} onNavigate={handleNavigate} onApiKeyChange={syncApiKeyState} /> },
   ];
 

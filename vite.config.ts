@@ -79,7 +79,7 @@ export default defineConfig(({ mode }) => ({
         // 静态资源预缓存；API 与封面代理不缓存
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/cover-proxy-/],
-        globPatterns: ['**/*.{js,css,html,png,svg,jpg,woff2}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,jpg,woff2,ttf}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
           {

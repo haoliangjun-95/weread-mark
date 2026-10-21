@@ -70,12 +70,31 @@ export async function saveOrShareDataUrl(dataUrl: string, fileName: string): Pro
   link.click();
 }
 
-/** 文本内容（如导出 PDF 的 HTML）在移动端存为文件分享 */
-export async function shareTextFile(content: string, fileName: string): Promise<void> {
+/** 文本内容（如导出的 JSON/CSV/HTML）在移动端存为文件分享 */
+export async function shareTextFile(content: string, fileName: string, mime = 'text/html'): Promise<void> {
   if (runtimeEnv !== 'web') {
     const base64 = btoa(unescape(encodeURIComponent(content)));
-    await shareOnNative(base64, fileName, 'text/html');
+    await shareOnNative(base64, fileName, mime);
   }
+}
+
+/** 二进制内容（Blob）跨端保存：Web 下载、原生分享 */
+export async function saveOrShareBlob(blob: Blob, fileName: string): Promise<void> {
+  if (runtimeEnv === 'web') {
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+    return;
+  }
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('文件编码失败'));
+    reader.readAsDataURL(blob);
+  });
+  await shareOnNative(base64, fileName, blob.type || 'application/octet-stream');
 }
 
 /**
