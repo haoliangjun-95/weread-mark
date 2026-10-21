@@ -46,14 +46,15 @@ function isDesktopView(view: ViewType): boolean {
 }
 
 function App() {
-  // 版本更新检测：检测到新版本时提示用户手动刷新，避免打断进行中的操作
+  // 版本更新检测：__BUILD_TIME__ 每次构建必变（version 号需要手动 bump 不可靠），
+  // 检测到新构建时提示用户刷新，避免打断进行中的操作
   const [updateAvailable, setUpdateAvailable] = useState(() => {
     const stored = localStorage.getItem(VERSION_KEY);
-    return !!stored && stored !== __APP_VERSION__;
+    return !!stored && stored !== __BUILD_TIME__;
   });
   useEffect(() => {
     if (!updateAvailable) {
-      localStorage.setItem(VERSION_KEY, __APP_VERSION__);
+      localStorage.setItem(VERSION_KEY, __BUILD_TIME__);
     }
   }, [updateAvailable]);
   const [currentView, setCurrentView] = useState<ViewType>(() => {
