@@ -1,5 +1,10 @@
-import { sanitizeRichText } from './sanitize';
-import { printOrShareHtml } from './share';
+import { sanitizeRichText, richTextToPlain } from './sanitize';
+import { printOrShareHtml, saveOrShareBlob } from './share';
+import { isNativeApp } from '../services/dbInterface';
+// 文本层 PDF 模块（含 jsPDF）动态加载：exportPdf 被视图静态引用，
+// 静态引入会把 jsPDF 拖回主包（瘦身回归）
+import type { ParsedBook } from './exportPdfText';
+import { showToast } from './toast';
 
 interface ExportReview {
   bookTitle: string;
@@ -22,12 +27,54 @@ function escapeJsString(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c');
 }
 
-function openPrintWindow(doc: string): boolean {
-  // 移动端无 window.print，走系统分享；Web 端保持新窗口打印
+/** 单条书评 → 文本层 PDF 的结构化模型 */
+function reviewToSection(review: ExportReview, withBookTitle: boolean): ParsedBook['sections'][number] {
+  const starsText = '★'.repeat(review.stars) + '☆'.repeat(5 - review.stars);
+  const text = review.htmlContent
+    ? richTextToPlain(review.htmlContent)
+    : (review.textContent || '');
+  return {
+    title: withBookTitle ? `《${review.bookTitle}》` : '⭐ 书评',
+    items: [{
+      kind: 'review',
+      label: starsText,
+      text,
+      meta: review.createTime + (review.likesCount ? ` · ♥ ${review.likesCount}` : ''),
+    }],
+  };
+}
+
+/**
+ * 原生端：结构化数据直接排版文本层 PDF（可检索）；缺生僻字回退 canvas 光栅化。
+ * Web 端：HTML 模板 + 打印窗口（矢量原生）。
+ */
+function openPrintWindow(doc: string, book: ParsedBook, pdfName: string): boolean {
+  if (isNativeApp) {
+    void (async () => {
+      try {
+        const { bookModelToPdfBlob } = await import('./exportPdfText');
+        const blob = await bookModelToPdfBlob(book);
+        await saveOrShareBlob(blob, pdfName);
+        showToast('已生成可检索 PDF，请选择保存或分享', 'success');
+      } catch (err) {
+        const { MissingGlyphError } = await import('./exportPdfText');
+        if (err instanceof MissingGlyphError) {
+          console.warn('[exportPdf] 含生僻字，回退光栅化：', err.message);
+          const { htmlToPdfAndShare } = await import('./exportPdfNative');
+          await htmlToPdfAndShare(doc, pdfName);
+          return;
+        }
+        console.error('[exportPdf] 书评 PDF 失败：', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        showToast(`导出失败：${msg || '请重试'}`, 'error');
+      }
+    })();
+    return true;
+  }
+  // 移动端无 window.print 已由原生分支处理；此处为 Web 打印窗口
   void printOrShareHtml(doc, '微痕-书评.html').then(ok => {
     if (!ok) {
-      // 弹窗被拦截时不能静默失败，提示用户
-      import('./toast').then(({ showToast }) => showToast('弹窗被浏览器拦截，请允许弹窗后重试', 'error'));
+      showToast('弹窗被浏览器拦截，请允许弹窗后重试', 'error');
     }
   });
   return true;
@@ -137,7 +184,13 @@ export function exportReviewToPdf(review: ExportReview): boolean {
 </body>
 </html>`;
 
-  return openPrintWindow(doc);
+  return openPrintWindow(doc, {
+    title: `《${review.bookTitle}》`,
+    author: review.bookAuthor,
+    stats: review.createTime,
+    sections: [reviewToSection(review, false)],
+    footer: '由 微痕 导出',
+  }, `${review.bookTitle}-书评.pdf`);
 }
 
 /** 返回 false 表示弹窗被浏览器拦截 */
@@ -247,5 +300,11 @@ export function exportReviewsToPdf(reviews: ExportReview[], title: string): bool
 </body>
 </html>`;
 
-  return openPrintWindow(doc);
+  return openPrintWindow(doc, {
+    title,
+    author: `共 ${reviews.length} 条书评`,
+    stats: '',
+    sections: reviews.map(r => reviewToSection(r, true)),
+    footer: '由 微痕 导出',
+  }, `${title}.pdf`);
 }
