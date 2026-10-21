@@ -2,7 +2,7 @@
  * 活跃热力图纯函数单测：sqrt 强度分级、年历网格（周一基、闰年、边界占位、月份标签）。
  */
 import { describe, it, expect } from 'vitest';
-import { intensityOf, buildYearGrid } from '../src/utils/heatmap';
+import { intensityOf, buildYearGrid, mergeReadTimesToDaily } from '../src/utils/heatmap';
 
 describe('intensityOf 强度分级', () => {
   it('0 与负值返回 0（无数据）', () => {
@@ -73,5 +73,27 @@ describe('buildYearGrid 年历网格', () => {
     const grid = buildYearGrid(2023); // 2023-01-01 周日 → 首列 6 个占位
     expect(grid.weeks[0].slice(0, 6).every(c => c.date === null && c.key === null)).toBe(true);
     expect(grid.weeks[0][6].date).toBe('2023-01-01');
+  });
+});
+
+describe('mergeReadTimesToDaily 逐月 readTimes 合并', () => {
+  const ts = (y: number, m: number, d: number, h = 12) =>
+    Math.floor(new Date(y, m - 1, d, h).getTime() / 1000).toString();
+
+  it('逐日聚合并秒转分钟（键 M-D 无前导零）', () => {
+    const daily = mergeReadTimesToDaily([
+      { [ts(2026, 1, 5)]: 3600, [ts(2026, 1, 5, 20)]: 1800, [ts(2026, 1, 31)]: 600 },
+      { [ts(2026, 2, 1)]: 120 },
+    ], 2026);
+    expect(daily['1-5']).toBe(90);
+    expect(daily['1-31']).toBe(10);
+    expect(daily['2-1']).toBe(2);
+  });
+
+  it('过滤非目标年份与零值', () => {
+    const daily = mergeReadTimesToDaily([
+      { [ts(2025, 1, 5)]: 3600, [ts(2026, 3, 1)]: 0, [ts(2026, 3, 2)]: 300 },
+    ], 2026);
+    expect(Object.keys(daily)).toEqual(['3-2']);
   });
 });

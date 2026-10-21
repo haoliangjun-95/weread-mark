@@ -25,6 +25,26 @@ export interface YearGrid {
 
 const MONTH_LABELS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
+/**
+ * 合并多个月的 readTimes（键=秒级时间戳字符串，值=当天秒数）为逐日分钟数。
+ * annually 接口的 readTimes 每月只含一个样本点，逐日数据必须逐月（monthly）拉取，
+ * 这里合并 12 个月的返回并按本地时区归日，键 'M-D' 与 queryDayCounts 对齐。
+ */
+export function mergeReadTimesToDaily(sources: Array<Record<string, number>>, year: number): Record<string, number> {
+  const daily: Record<string, number> = {};
+  for (const source of sources) {
+    for (const [ts, secs] of Object.entries(source)) {
+      const n = Number(secs);
+      if (!n) continue;
+      const d = new Date(Number(ts) * 1000);
+      if (d.getFullYear() !== year) continue;
+      const key = `${d.getMonth() + 1}-${d.getDate()}`;
+      daily[key] = (daily[key] || 0) + Math.round(n / 60);
+    }
+  }
+  return daily;
+}
+
 /** 生成年历网格：1 月 1 日所在周（周一起）到 12 月 31 日所在周 */
 export function buildYearGrid(year: number): YearGrid {
   const pad = (v: number) => String(v).padStart(2, '0');

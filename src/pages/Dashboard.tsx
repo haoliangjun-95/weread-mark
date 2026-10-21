@@ -48,8 +48,6 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
   const [selectedYearMonthlyTrend, setSelectedYearMonthlyTrend] = useState<{ month: string; time: number }[]>([]);
   const [last7DaysTrend, setLast7DaysTrend] = useState<{ date: string; time: number }[]>([]);
   const [last30DaysTrend, setLast30DaysTrend] = useState<{ date: string; time: number }[]>([]);
-  /** 今年逐日阅读秒数（annuallyStats.readTimes），Web 端热力图复用，避免重复请求 */
-  const [annualReadTimes, setAnnualReadTimes] = useState<Record<string, number> | null>(null);
   const [thisMonthTrend, setThisMonthTrend] = useState<{ date: string; time: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +133,6 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
        setFinishedCount(finalFinished);
        setTotalTime(currentStats.totalReadTime || 0);
        setReadDays(currentStats.readDays || 0);
-       if (annuallyStats?.readTimes) setAnnualReadTimes(annuallyStats.readTimes);
 
        // 如果是年份模式，获取该年的月度数据
        if (timeMode === 'annually') {
@@ -438,7 +435,6 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
        {/* 往年今天（桌面版本地库，纯本地查询） */}
        {onSelectBook && <OnThisDayCard onSelectBook={onSelectBook} />}
        <StatsTrendCard />
-       <ActivityHeatmapCard webReadTimes={annualReadTimes ?? undefined} />
          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
            <div>
              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
@@ -521,6 +517,9 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
            </div>
          ))}
        </div>
+
+      {/* 活跃热力图：置于图表区顶部（最近30天趋势之上） */}
+      <ActivityHeatmapCard />
 
       {/* Charts（recharts 懒加载分包） */}
       {chartData && (

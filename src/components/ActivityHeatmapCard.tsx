@@ -2,24 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { queryDayCounts, queryReportYears, isNativeApp } from '../services/localDb';
 import { onLocalReady, isSynced } from '../services/dataService';
 import { fetchReadingStats } from '../services/weread';
-import { buildYearGrid, intensityOf } from '../utils/heatmap';
+import { buildYearGrid, intensityOf, mergeReadTimesToDaily } from '../utils/heatmap';
 
 /**
  * 看板活跃热力图（GitHub contributions 风格，参考 Obsidian Heatmap Calendar）：
  * - 原生端（本地库）：每日划线/想法/书评条数
- * - Web：每日阅读分钟数（readTimes 聚合）
+ * - Web：每日阅读分钟数——annually 接口的 readTimes 每月只有一个样本点，
+ *   逐日数据需逐月（monthly）拉取合并（与 Dashboard 月度趋势同模式）
  * 强度分级沿用 sqrt 归一化（低量日也能区分深浅）。
  */
 
 /** 热力颜色（绿色 5 档，level 0 = 无数据底色） */
 const LEVEL_COLORS = ['#c6e48b', '#7bc96f', '#49af5d', '#2e8840', '#196127'];
 
-interface ActivityHeatmapCardProps {
-  /** Web 端 readTimes 数据（键=秒级时间戳，值=秒），由 Dashboard 传入避免重复请求 */
-  webReadTimes?: Record<string, number>;
-}
-
-export default function ActivityHeatmapCard({ webReadTimes }: ActivityHeatmapCardProps) {
+export default function ActivityHeatmapCard() {
   const currentYear = new Date().getFullYear();
   const [years, setYears] = useState<number[]>([currentYear, currentYear - 1]);
   const [year, setYear] = useState(currentYear);
@@ -66,19 +62,17 @@ export default function ActivityHeatmapCard({ webReadTimes }: ActivityHeatmapCar
           }
         } else {
           setUnit('分钟');
-          // 今年优先复用 Dashboard 传入的 readTimes，其余年份单独请求
-          const source = year === currentYear && webReadTimes
-            ? webReadTimes
-            : (await fetchReadingStats('annually', new Date(year, 0, 1).getTime() / 1000).catch(() => null))?.readTimes || {};
+          // 逐月拉取（12 个 monthly 请求走限速通道），合并为逐日分钟数；
+          // 未来月份返回空数据，单月失败容忍为空
+          const monthSources = await Promise.all(
+            Array.from({ length: 12 }, (_, m) =>
+              fetchReadingStats('monthly', new Date(year, m, 1).getTime() / 1000)
+                .then(d => d.readTimes || {})
+                .catch(() => ({} as Record<string, number>)),
+            ),
+          );
           if (cancelled) return;
-          const aggregated: Record<string, number> = {};
-          for (const [ts, secs] of Object.entries(source)) {
-            const d = new Date(Number(ts) * 1000);
-            if (d.getFullYear() !== year || !Number(secs)) continue;
-            const key = `${d.getMonth() + 1}-${d.getDate()}`;
-            aggregated[key] = (aggregated[key] || 0) + Math.round(Number(secs) / 60);
-          }
-          setCounts(aggregated);
+          setCounts(mergeReadTimesToDaily(monthSources, year));
           setCountsYear(year);
         }
       } catch (err) {
@@ -90,7 +84,7 @@ export default function ActivityHeatmapCard({ webReadTimes }: ActivityHeatmapCar
       }
     })();
     return () => { cancelled = true; };
-  }, [year, webReadTimes, currentYear]);
+  }, [year, currentYear]);
 
   const loading = countsYear !== year;
   const grid = useMemo(() => buildYearGrid(year), [year]);
