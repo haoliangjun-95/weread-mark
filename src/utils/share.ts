@@ -13,7 +13,7 @@ interface HarmonyShareBridge {
 }
 
 /** ArkTS 抛出的错误跨桥后是普通对象，归一为带 message 的 Error（否则显示 [object Object]） */
-function toBridgeError(e: unknown, label: string): Error {
+export function toBridgeError(e: unknown, label: string): Error {
   if (e && typeof e === 'object') {
     const obj = e as { message?: unknown };
     if (typeof obj.message === 'string' && obj.message) return new Error(`${label}: ${obj.message}`);

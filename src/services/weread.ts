@@ -128,18 +128,25 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     await acquireSlot();
     try {
       const result = await requestOnce<T>(params, apiKey, signal);
+      if (consecutiveThrottled > 0) {
+        window.dispatchEvent(new CustomEvent('weread-throttled-recovered'));
+      }
       consecutiveThrottled = 0; // 任何成功都重置连击
       return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (!(err instanceof ThrottledError)) throw err;
       consecutiveThrottled++;
+      window.dispatchEvent(new CustomEvent('weread-throttled', {
+        detail: { consecutive: consecutiveThrottled, api: params.api_name },
+      }));
       if (consecutiveThrottled >= THROTTLE_STREAK_LIMIT) {
         // 连续频控说明配额整体耗尽：拉长整体冷却并重置计数，避免每本书都白等三轮退避
         console.warn(`[callApi] 连续 ${consecutiveThrottled} 次频控，整体冷却 ${COOLDOWN_MS / 1000}s 等待配额恢复`);
         consecutiveThrottled = 0;
         await new Promise(r => setTimeout(r, COOLDOWN_MS));
       }
+      window.dispatchEvent(new CustomEvent('weread-throttled-recovered'));
     } finally {
       releaseSlot();
     }
