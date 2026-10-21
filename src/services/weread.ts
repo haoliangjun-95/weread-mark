@@ -38,29 +38,20 @@ export function setApiKey(key: string): void {
 
 export async function validateApiKey(key: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        api_name: '/shelf/sync',
-        skill_version: SKILL_VERSION,
-      }),
-    });
-    if (response.status === 401) {
+    // 保存目标 key 后复用统一的 callApi 通道（限速/桥接/错误处理一份逻辑）
+    const prev = getApiKey();
+    setApiKey(key);
+    try {
+      await callApi<ShelfData>({ api_name: '/shelf/sync' });
+      return { valid: true };
+    } finally {
+      setApiKey(prev);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('401')) {
       return { valid: false, error: '输入的Key错误，请从微信读书官网获取正确的key' };
     }
-    if (!response.ok) {
-      return { valid: false, error: `请求失败: HTTP ${response.status}` };
-    }
-    const data = await response.json();
-    if (data.errcode && data.errcode !== 0) {
-      return { valid: false, error: data.errmsg || 'API Key 无效，请检查后重试' };
-    }
-    return { valid: true };
-  } catch (e) {
     return { valid: false, error: e instanceof Error ? e.message : '网络错误，请检查网络后重试' };
   }
 }
@@ -93,6 +84,12 @@ class ThrottledError extends Error {
 
 const MAX_CONCURRENT_REQUESTS = 6;
 const MIN_REQUEST_INTERVAL_MS = 150; // 全局配速：约 6-7 请求/秒上限
+
+// 连续频控熔断：网关配额耗尽时逐条退避效率极低，连续多次 403 后整体冷却
+// 让配额窗口恢复，比每本书各自退避更高效（实测一轮同步内即可自愈）
+let consecutiveThrottled = 0;
+const THROTTLE_STREAK_LIMIT = 5;
+const COOLDOWN_MS = 90_000;
 let activeCount = 0;
 let lastRequestAt = 0;
 const waitQueue: (() => void)[] = [];
@@ -130,10 +127,19 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
     }
     await acquireSlot();
     try {
-      return await requestOnce<T>(params, apiKey, signal);
+      const result = await requestOnce<T>(params, apiKey, signal);
+      consecutiveThrottled = 0; // 任何成功都重置连击
+      return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (!(err instanceof ThrottledError)) throw err;
+      consecutiveThrottled++;
+      if (consecutiveThrottled >= THROTTLE_STREAK_LIMIT) {
+        // 连续频控说明配额整体耗尽：拉长整体冷却并重置计数，避免每本书都白等三轮退避
+        console.warn(`[callApi] 连续 ${consecutiveThrottled} 次频控，整体冷却 ${COOLDOWN_MS / 1000}s 等待配额恢复`);
+        consecutiveThrottled = 0;
+        await new Promise(r => setTimeout(r, COOLDOWN_MS));
+      }
     } finally {
       releaseSlot();
     }
@@ -141,42 +147,68 @@ async function callApi<T>(params: ApiRequestParams, signal?: AbortSignal): Promi
   throw lastError;
 }
 
+/** 鸿蒙 ArkWeb 壳注入的原生 HTTP 桥（绕过 WebView 的 CORS 限制） */
+interface HarmonyHttpBridge {
+  httpPost(path: string, headers: Record<string, string>, body: string): Promise<{ status: number; body: string }>;
+}
+
+type GatewayBody = { errcode?: number; errmsg?: string };
+
 async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?: AbortSignal): Promise<T> {
-  // 15 秒超时，防止个别请求永久挂起拖死整页加载
-  const timeoutSignal = AbortSignal.timeout(15000);
-  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  const payload = JSON.stringify({
+    ...params,
+    skill_version: SKILL_VERSION,
+  });
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
 
-  let response: Response;
-  try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...params,
-        skill_version: SKILL_VERSION,
-      }),
-      signal: requestSignal,
-    });
-  } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw err;
-    }
-    throw new Error(`网络请求失败（${params.api_name}），请检查网络连接后重试`, { cause: err });
-  }
-
-  type GatewayBody = { errcode?: number; errmsg?: string };
   let body: GatewayBody | null;
-  if (response.ok) {
-    body = (await response.json()) as GatewayBody;
-  } else {
-    // 非 2xx 也尽量解析响应体，网关频控错误在 HTTP 403 的 body 里（errcode -2014）
+  let httpStatus: number;
+
+  if (API_URL.startsWith('bridge://')) {
+    // 鸿蒙：API_URL 形如 bridge://api/agent/gateway，路径由原生桥拼到真实网关
+    const bridge = (window as unknown as { HarmonyBridge?: HarmonyHttpBridge }).HarmonyBridge;
+    if (!bridge?.httpPost) {
+      throw new Error('鸿蒙原生桥未注入（请在 App 内打开，而非浏览器）');
+    }
+    const res = await bridge.httpPost(API_URL.slice('bridge://'.length), headers, payload);
+    httpStatus = res.status;
     try {
-      body = (await response.clone().json()) as GatewayBody;
+      body = JSON.parse(res.body) as GatewayBody;
     } catch {
       body = null;
+    }
+  } else {
+    // 15 秒超时，防止个别请求永久挂起拖死整页加载
+    const timeoutSignal = AbortSignal.timeout(15000);
+    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
+    let response: Response;
+    try {
+      response = await fetch(API_URL, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal: requestSignal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw err;
+      }
+      throw new Error(`网络请求失败（${params.api_name}），请检查网络连接后重试`, { cause: err });
+    }
+    httpStatus = response.status;
+    if (response.ok) {
+      body = (await response.json()) as GatewayBody;
+    } else {
+      // 非 2xx 也尽量解析响应体，网关频控错误在 HTTP 403 的 body 里（errcode -2014）
+      try {
+        body = (await response.clone().json()) as GatewayBody;
+      } catch {
+        body = null;
+      }
     }
   }
   if (body && body.errcode && body.errcode !== 0) {
@@ -187,12 +219,12 @@ async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?:
     throw new Error(message);
   }
 
-  if (!response.ok) {
-    if (response.status === 401) {
+  if (httpStatus < 200 || httpStatus >= 300) {
+    if (httpStatus === 401) {
       clearApiKey();
     }
-    const message = `API 请求失败：HTTP ${response.status} (${params.api_name})`;
-    if (response.status === 403 || response.status === 429) {
+    const message = `API 请求失败：HTTP ${httpStatus} (${params.api_name})`;
+    if (httpStatus === 403 || httpStatus === 429) {
       throw new ThrottledError(message);
     }
     throw new Error(message);
@@ -406,11 +438,42 @@ export async function fetchBookReviews(
  * 拉全单本书的想法+书评。
  * 注意：该接口的 synckey 实际是「增量同步 key」而非页码游标——把回包 synckey 传回去
  * 只会得到比它更新的内容（通常为空），按页翻会永远只拿到第一页（实测 70 本书卡在 20 条）。
- * 正确策略：一次请求用大 count 拉尽量多；若仍有缺口且 hasMore=1，再用 synckey 补拉增量。
+ * 且截断时 hasMore 也返回 0（实测 count=100 拉 108 条的书：回 100 条 + hasMore=0），
+ * 翻页循环无法自愈，只能靠一次大 count 拉全（实测 count=200/1000 服务端均支持）。
  * 以回包 totalCount 做完整性校验，reviewId 去重防死循环。
  */
+/** 有效 count 档位记忆：某档拿到过数据后全局复用，避免每本书都把无效档请求一遍
+ *  （降级探测定价高：3 档 = 3 倍请求量，直接放大频控风险） */
+let effectiveReviewPageSize: number | null = null;
+
 export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal): Promise<ReviewItem[]> {
-  const PAGE_SIZE = 100;
+  // 网关对不同出口/路径对大 count 的行为不一致：鸿蒙直连下 count=1000 曾整书返回空列表
+  // （落库校验样本：划线 21/21 成功而想法 0/5）。按 1000 → 100 → 20 渐进降级，
+  // 任一档拿到数据或确认真无数据（totalCount=0）即返回。
+  const COUNT_FALLBACKS = [1000, 100, 20];
+  const order = effectiveReviewPageSize != null
+    ? [effectiveReviewPageSize, ...COUNT_FALLBACKS.filter(c => c !== effectiveReviewPageSize)]
+    : COUNT_FALLBACKS;
+  let lastEmpty = false;
+  for (const pageSize of order) {
+    const { items, total } = await fetchAllBookReviewsPaged(bookId, pageSize, signal);
+    if (items.length > 0 || total === 0) {
+      if (items.length > 0) effectiveReviewPageSize = pageSize;
+      return items;
+    }
+    lastEmpty = true;
+  }
+  if (lastEmpty) {
+    console.warn(`[fetchAllBookReviews] ${bookId} 所有 count 档位均返回空，疑似网关异常`);
+  }
+  return [];
+}
+
+async function fetchAllBookReviewsPaged(
+  bookId: string,
+  PAGE_SIZE: number,
+  signal?: AbortSignal,
+): Promise<{ items: ReviewItem[]; total: number }> {
   const all = new Map<string, ReviewItem>();
   let synckey = 0;
   let total = Number.POSITIVE_INFINITY;
@@ -437,7 +500,7 @@ export async function fetchAllBookReviews(bookId: string, signal?: AbortSignal):
   }
 
   if (all.size < total) {
-    console.warn(`[fetchAllBookReviews] ${bookId} 可能不完整：${all.size}/${total}（count 上限或游标停滞）`);
+    console.warn(`[fetchAllBookReviews] ${bookId} 可能不完整：${all.size}/${total}（count=${PAGE_SIZE} 上限或游标停滞）`);
   }
-  return [...all.values()];
+  return { items: [...all.values()], total: total === Number.POSITIVE_INFINITY ? 0 : total };
 }

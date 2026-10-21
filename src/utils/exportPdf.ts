@@ -1,4 +1,5 @@
 import { sanitizeRichText } from './sanitize';
+import { printOrShareHtml } from './share';
 
 interface ExportReview {
   bookTitle: string;
@@ -22,13 +23,13 @@ function escapeJsString(text: string): string {
 }
 
 function openPrintWindow(doc: string): boolean {
-  const win = window.open('', '_blank');
-  if (!win) {
-    // 弹窗被拦截时不能静默失败，返回 false 让调用方提示用户
-    return false;
-  }
-  win.document.write(doc);
-  win.document.close();
+  // 移动端无 window.print，走系统分享；Web 端保持新窗口打印
+  void printOrShareHtml(doc, '微痕-书评.html').then(ok => {
+    if (!ok) {
+      // 弹窗被拦截时不能静默失败，提示用户
+      import('./toast').then(({ showToast }) => showToast('弹窗被浏览器拦截，请允许弹窗后重试', 'error'));
+    }
+  });
   return true;
 }
 

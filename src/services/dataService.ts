@@ -5,6 +5,7 @@ import {
 } from './weread';
 import {
   isTauri,
+  isNativeApp,
   hasLocalData,
   resetLocalDb,
   queryNotebooks,
@@ -32,7 +33,8 @@ export type { LocalSearchResult, BookDetailResult };
 let localReadyPromise: Promise<boolean> | null = null;
 
 function localReady(): Promise<boolean> {
-  if (!isTauri) return Promise.resolve(false);
+  // 三端原生环境（桌面/移动/鸿蒙）均可评估本地库；Web 恒为在线模式
+  if (!isNativeApp) return Promise.resolve(false);
   if (!localReadyPromise) {
     localReadyPromise = hasLocalData().catch(() => false);
   }
@@ -60,7 +62,7 @@ export function onLocalReady(listener: () => void): () => void {
 
 /** API Key 变更时调用：清空本地库与会话缓存，读路径回到在线模式，避免读到上一个账号的数据 */
 export function handleApiKeyChanged(): void {
-  if (isTauri) {
+  if (isNativeApp) {
     void resetLocalDb().catch(err => console.warn('[dataService] 清空本地库失败：', err));
   }
   localReadyPromise = null;

@@ -1,4 +1,22 @@
 import domtoimage from 'dom-to-image-more';
+import { saveOrShareDataUrl } from './share';
+import { isHarmony } from '../services/dbInterface';
+
+/** 鸿蒙：封面经原生桥取 dataURL（ArkWeb 对 CDN 图片的 CORS 限制绕行） */
+async function fetchCoverViaBridge(url: string): Promise<string> {
+  try {
+    const bridge = (window as unknown as {
+      HarmonyBridge?: { fetchImageBase64?: (u: string) => Promise<string> };
+    }).HarmonyBridge;
+    if (bridge?.fetchImageBase64) {
+      return await bridge.fetchImageBase64(url);
+    }
+  } catch (err) {
+    console.warn('[exportImage] 桥取封面失败：', err);
+  }
+  return '';
+}
+
 import type { ExportStyleType } from '../App';
 
 interface ThoughtEntry {
@@ -106,7 +124,7 @@ export async function exportItemToImage(data: ExportImageData) {
 
   // ============ 顶部：封面 + 日期区域 ============
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;align-items:center;gap:35px;margin-bottom:45px;';
+  header.style.cssText = `display:flex;align-items:center;gap:35px;margin-top:${isHarmony ? 70 : 18}px;margin-bottom:45px;`;
 
   // 封面
   const coverWrapper = document.createElement('div');
@@ -119,7 +137,14 @@ export async function exportItemToImage(data: ExportImageData) {
   if (data.bookCover) {
     const img = document.createElement('img');
     img.crossOrigin = 'anonymous';
-    img.src = proxyCoverUrl(data.bookCover);
+    let coverSrc = proxyCoverUrl(data.bookCover);
+    // 鸿蒙 ArkWeb 下 origin 为 null，CDN 图片的 CORS 校验失败导致封面加载不出：
+    // 先经原生桥取回 dataURL（原生 http 无 CORS），同源嵌入对两条渲染链路都安全
+    if (isHarmony) {
+      const dataUrl = await fetchCoverViaBridge(coverSrc);
+      if (dataUrl) coverSrc = dataUrl;
+    }
+    img.src = coverSrc;
     img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
     img.onerror = () => { coverDiv.textContent = '📖'; };
     coverDiv.appendChild(img);
@@ -254,15 +279,19 @@ export async function exportItemToImage(data: ExportImageData) {
   await new Promise(resolve => requestAnimationFrame(resolve));
 
   try {
-    // 先转成 SVG，SVG 渲染更准确
-    const svgDataUrl = await domtoimage.toSvg(card, {
-      bgcolor: colors.cardBg,
-    });
+    let dataUrl: string;
+    try {
+      // 先转成 SVG，SVG 渲染更准确（部分 WebView 如鸿蒙 ArkWeb 不支持
+      // foreignObject SVG，加载失败时回退 html2canvas 纯 canvas 方案）
+      const svgDataUrl = await domtoimage.toSvg(card, {
+        bgcolor: colors.cardBg,
+      });
     // 从 SVG data URL 创建图片
     const img = new Image();
     await new Promise((resolve, reject) => {
       img.onload = resolve;
-      img.onerror = reject;
+      // 裸 reject(Event) 会让上层 catch 显示 [object Event]，改为可读错误
+      img.onerror = () => reject(new Error('SVG 图片加载失败（当前 WebView 可能不支持 foreignObject）'));
       img.src = svgDataUrl;
     });
     // 绘制到 canvas
@@ -272,10 +301,20 @@ export async function exportItemToImage(data: ExportImageData) {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(2, 2);
     ctx.drawImage(img, 0, 0);
-    const link = document.createElement('a');
-    link.download = `${data.bookTitle}-笔记-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+      dataUrl = canvas.toDataURL('image/png');
+    } catch (svgErr) {
+      console.warn('[exportImage] SVG 链路失败，回退 html2canvas：', svgErr);
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(card, {
+        backgroundColor: colors.cardBg,
+        scale: 2,
+        useCORS: false,
+        allowTaint: false,
+      });
+      dataUrl = canvas.toDataURL('image/png');
+    }
+    // Web/桌面走下载；移动 App 调起系统分享面板
+    await saveOrShareDataUrl(dataUrl, `${data.bookTitle}-笔记-${Date.now()}.png`);
   } finally {
     document.body.removeChild(wrapper);
   }

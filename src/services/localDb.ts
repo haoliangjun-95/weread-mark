@@ -1,5 +1,3 @@
-import Database from '@tauri-apps/plugin-sql';
-import { invoke } from '@tauri-apps/api/core';
 import {
   fetchShelf,
   fetchAllNotebooks,
@@ -7,6 +5,7 @@ import {
   fetchAllBookReviews,
   fetchReadingStats,
 } from './weread';
+import { isTauri, isCapacitor, isHarmony, isNativeApp } from './dbInterface';
 import type {
   BookItem,
   NotebookItem,
@@ -15,16 +14,33 @@ import type {
   ReviewItem,
 } from '../types/weread';
 
-/** 运行时检测 Tauri 环境（tauri dev 不走 tauri mode，不能用 env 判断） */
-export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export { isTauri, isCapacitor, isHarmony, isNativeApp };
+
+/** localDb 仅在原生环境可用（tauri 桌面 / capacitor 移动 / harmony 鸿蒙） */
+const isNativeDb = isTauri || isCapacitor || isHarmony;
 
 const DB_FILE_NAME = 'weread.db';
+const DB_CONN_NAME = 'weread';
 const CUSTOM_DB_DIR_KEY = 'weread-db-dir';
 const SCHEMA_VERSION = 2;
 
-let dbPromise: Promise<Database> | null = null;
+/**
+ * 统一数据库连接接口：抹平 tauri-plugin-sql 与 @capacitor-community/sqlite 的 API 差异。
+ * - tauri: execute(sql, params?) / select<T>(sql, params?)
+ * - capacitor: run(sql, params?) 返回变更数 / query(sql, params?) 返回 { values }
+ */
+interface DbConnection {
+  execute(query: string, params?: unknown[]): Promise<unknown>;
+  select<T>(query: string, params?: unknown[]): Promise<T[]>;
+  /** 可选：同一 SQL 多组参数批量执行（单事务），同步大量行时远快于逐条调用 */
+  executeMany?(query: string, rows: unknown[][]): Promise<void>;
+  /** 可选：关闭连接（切换存储目录时使用） */
+  close?(): Promise<void>;
+}
 
-/** 自定义存储目录（localStorage 持久化；必须在 load 之前可知，故不能存进库里） */
+let dbPromise: Promise<DbConnection> | null = null;
+
+/** 自定义存储目录（localStorage 持久化；必须在 load 之前可知，故不能存进库里）。仅桌面支持。 */
 function getCustomDbDir(): string | null {
   try {
     return localStorage.getItem(CUSTOM_DB_DIR_KEY) || null;
@@ -33,8 +49,9 @@ function getCustomDbDir(): string | null {
   }
 }
 
-/** 目录 → sqlite 连接串。绝对路径会整体替换插件的默认 App 目录（path_mapper 特性）。
- *  反斜杠归一为 /，按段 encodeURIComponent 保证中文等非 ASCII 目录名安全（sqlx 侧会解码）。 */
+/** 目录 → sqlite 连接串（仅 tauri 插件使用）。
+ *  绝对路径会整体替换插件的默认 App 目录（path_mapper 特性）；
+ *  反斜杠归一为 /，按段 encodeURIComponent 保证中文目录名安全（sqlx 侧会解码）。 */
 function toSqliteUrl(dir: string | null): string {
   if (!dir) return `sqlite:${DB_FILE_NAME}`;
   const norm = dir.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -46,9 +63,105 @@ function currentDbUrl(): string {
   return toSqliteUrl(getCustomDbDir());
 }
 
-function getDb(): Promise<Database> {
+/** tauri 实现：plugin-sql 的 Database 已满足接口形状 */
+async function openTauriDb(): Promise<DbConnection> {
+  const { default: Database } = await import('@tauri-apps/plugin-sql');
+  const db = await Database.load(currentDbUrl());
+  return {
+    execute: (q, p) => db.execute(q, p),
+    select: <T,>(q: string, p?: unknown[]) => db.select<T>(q, p),
+    close: () => db.close().then(() => undefined),
+  };
+}
+
+/** capacitor 实现：@capacitor-community/sqlite 的 run/query 适配为统一接口 */
+async function openCapacitorDb(): Promise<DbConnection> {
+  const { CapacitorSQLite, SQLiteConnection } = await import('@capacitor-community/sqlite');
+  const sqlite = new SQLiteConnection(CapacitorSQLite);
+  const isEncrypted = false;
+  const mode = 'no-encryption';
+  const version = 1;
+  const readonly = false;
+  const conn = await sqlite.createConnection(DB_CONN_NAME, isEncrypted, mode, version, readonly);
+  await conn.open().catch(async () => {
+    // 已存在连接时 open 报错是幂等噪音，确认存活即可
+    const ok = await sqlite.isConnection(DB_CONN_NAME, readonly);
+    if (!ok) throw new Error('SQLite 连接打开失败');
+  });
+  return {
+    async execute(query: string, params?: unknown[]) {
+      const res = await conn.run(query, params ?? []);
+      return res.changes;
+    },
+    async select<T>(query: string, params?: unknown[]): Promise<T[]> {
+      const res = await conn.query(query, params ?? []);
+      return (res.values ?? []) as T[];
+    },
+  };
+}
+
+/** 鸿蒙实现：ArkTS 侧 registerJavaScriptProxy 注入的原生桥，底层是 relationalStore */
+interface HarmonyDbBridge {
+  dbExecute(sql: string, params?: unknown[]): Promise<unknown>;
+  dbExecuteBatch(sql: string, paramsList?: unknown[][]): Promise<unknown>;
+  dbSelect(sql: string, params?: unknown[]): Promise<unknown[]>;
+}
+
+/** 桥调用超时保护：ArkWeb 的 async 方法偶发悬挂时避免同步流程永久卡死 */
+const BRIDGE_TIMEOUT_MS = 30000;
+
+/** 桥抛出的 ArkTS Error 跨桥后是普通对象（{code,message} 或纯字符串），
+ *  String() 会得到 [object Object]，统一归一为带可读 message 的 Error */
+function normalizeBridgeError(e: unknown, label: string): Error {
+  if (typeof e === 'string') return new Error(`${label}: ${e}`);
+  if (e && typeof e === 'object') {
+    const obj = e as { message?: unknown; code?: unknown };
+    if (typeof obj.message === 'string' && obj.message) return new Error(`${label}: ${obj.message}`);
+    try {
+      return new Error(`${label}: ${JSON.stringify(e)}`);
+    } catch {
+      return new Error(`${label}: 未知错误`);
+    }
+  }
+  return new Error(`${label}: ${String(e)}`);
+}
+
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    p.catch(e => { throw normalizeBridgeError(e, label); }),
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} 桥调用超时(${BRIDGE_TIMEOUT_MS / 1000}s)`)), BRIDGE_TIMEOUT_MS);
+    }),
+  ]);
+}
+
+async function openHarmonyDb(): Promise<DbConnection> {
+  const bridge = (window as unknown as { HarmonyBridge: HarmonyDbBridge }).HarmonyBridge;
+  if (!bridge?.dbExecute || !bridge?.dbSelect) {
+    throw new Error('鸿蒙数据库桥未注入');
+  }
+  return {
+    execute: (q, p) => withTimeout(bridge.dbExecute(q, p), 'dbExecute'),
+    executeMany: async (q, rows) => {
+      if (bridge.dbExecuteBatch) {
+        // 每块 2000 行，避免单次跨桥参数过大
+        for (let i = 0; i < rows.length; i += 2000) {
+          await withTimeout(bridge.dbExecuteBatch(q, rows.slice(i, i + 2000)), 'dbExecuteBatch');
+        }
+      } else {
+        for (const row of rows) {
+          await bridge.dbExecute(q, row);
+        }
+      }
+    },
+    select: <T,>(q: string, p?: unknown[]) => withTimeout(bridge.dbSelect(q, p), 'dbSelect') as Promise<T[]>,
+  };
+}
+
+function getDb(): Promise<DbConnection> {
   if (!dbPromise) {
-    dbPromise = Database.load(currentDbUrl()).then(async (db) => {
+    const opener = isTauri ? openTauriDb() : isCapacitor ? openCapacitorDb() : openHarmonyDb();
+    dbPromise = opener.then(async (db) => {
       await migrate(db);
       return db;
     });
@@ -58,14 +171,14 @@ function getDb(): Promise<Database> {
   return dbPromise;
 }
 
-async function migrate(db: Database): Promise<void> {
+async function migrate(db: DbConnection): Promise<void> {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS sync_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )
   `);
-  const versionRow = await db.select<{ value: string }[]>(
+  const versionRow = await db.select<{ value: string }>(
     'SELECT value FROM sync_meta WHERE key = ?',
     ['schema_version'],
   );
@@ -152,7 +265,7 @@ async function migrate(db: Database): Promise<void> {
   ]);
 }
 
-async function ensureFts(db: Database): Promise<void> {
+async function ensureFts(db: DbConnection): Promise<void> {
   // FTS5 默认分词器不切分中文，召回不全，已改用 LIKE 查询（见 ftsSearch）。
   // 保留建表仅为兼容已存在这些表的旧库；新同步不再写入 FTS 数据。
   await db.execute(`
@@ -173,6 +286,8 @@ export interface SyncProgress {
   done: number;
   total: number;
   phase: 'books' | 'contents';
+  /** 可选阶段说明（如重试轮），UI 直接展示 */
+  stage?: string;
 }
 
 const SYNC_CONCURRENCY = 10;
@@ -181,9 +296,16 @@ const SYNC_CONCURRENCY = 10;
  * 全量同步：书架 + 笔记列表落 books 表，再逐书拉划线/想法/书评落明细表，
  * 最后写统计快照。返回同步失败（重试后仍失败）的书数量。
  */
+export interface SyncFailure {
+  title: string;
+  reason: string;
+}
+
 export interface SyncResult {
   /** 重试后仍失败的书数量 */
   failedCount: number;
+  /** 失败原因样本（最多 3 条，用于界面展示定位根因） */
+  failureSamples: SyncFailure[];
   /** 本次实际拉取明细的书数量（增量同步时有变化的书 + 首次同步） */
   changedCount: number;
   /** 笔记书总数 */
@@ -200,10 +322,22 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     fetchAllNotebooks(),
   ]);
 
-  const existingRows = await db.select<{
+  interface ExistingRow {
     bookId: string; noteCount: number; reviewCount: number;
     bookmarkCount: number; markedStatus: number; syncedAt: number;
-  }[]>('SELECT bookId, noteCount, reviewCount, bookmarkCount, markedStatus, syncedAt FROM books');
+  }
+  const rawExisting = await db.select<Record<string, unknown>>(
+    'SELECT bookId, noteCount, reviewCount, bookmarkCount, markedStatus, syncedAt FROM books');
+  // 鸿蒙桥查询值统一为字符串：数值字段读出后必须集中归一为 number，
+  // 否则增量判断的严格比较（如 syncedAt === 0 对 "0"）恒 false，缺失书永远不会重拉
+  const existingRows: ExistingRow[] = rawExisting.map(r => ({
+    bookId: String(r.bookId),
+    noteCount: Number(r.noteCount || 0),
+    reviewCount: Number(r.reviewCount || 0),
+    bookmarkCount: Number(r.bookmarkCount || 0),
+    markedStatus: Number(r.markedStatus || 0),
+    syncedAt: Number(r.syncedAt || 0),
+  }));
   const existing = new Map(existingRows.map(r => [r.bookId, r]));
 
   const bookRows = new Map<string, Record<string, unknown>>();
@@ -260,8 +394,9 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
   // 最后一个条件是自愈路径：历史版本曾因翻页缺陷只拉到第一页（计数比对不出差异），
   // 用本地 reviews 实际条数与线上 reviewCount 对账，缺的书自动重拉。
   const localReviewCounts = new Map(
-    (await db.select<{ bookId: string; c: number }[]>(
-      'SELECT bookId, COUNT(*) as c FROM reviews GROUP BY bookId')).map(r => [r.bookId, r.c]),
+    (await db.select<{ bookId: string; c: number }>(
+      'SELECT bookId, COUNT(*) as c FROM reviews GROUP BY bookId'))
+      .map(r => [String(r.bookId), Number(r.c || 0)] as [string, number]),
   );
   const allNotebookBooks = (notebooks.books || []).filter(nb => nb.book?.bookId);
   const targets = allNotebookBooks.filter(nb => {
@@ -275,6 +410,7 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
   });
   let done = 0;
   const failedBooks: typeof targets = [];
+  const failureSamples: SyncFailure[] = [];
   onProgress?.({ done: 0, total: targets.length, phase: 'contents' });
 
   const syncOne = async (nb: (typeof targets)[number]) => {
@@ -300,7 +436,13 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
       try {
         await syncOne(nb);
       } catch (err) {
-        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, err);
+        const reason = err instanceof Error
+          ? err.message
+          : (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string'
+              ? (err as { message: string }).message
+              : (() => { try { return JSON.stringify(err); } catch { return String(err); } })());
+        console.warn(`[sync] 书籍 ${nb.book!.title} 同步失败，待重试：`, reason);
+        failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
       } finally {
         done++;
@@ -309,17 +451,34 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     }));
   }
 
-  // 失败的书串行重试一轮（往往是瞬时限流），仍失败的计入返回值
+  // 失败的书串行重试一轮（往往是瞬时限流，含退避最长每本约 50 秒），仍失败的计入返回值。
+  // 重试也推进进度，否则 UI 会停在"最后一本卡住"的假象。
   if (failedBooks.length > 0) {
     console.warn(`[sync] ${failedBooks.length} 本书失败，开始重试`);
     const retry = [...failedBooks];
     failedBooks.length = 0;
+    let retryDone = 0;
+    const retryTotal = retry.length;
     for (const nb of retry) {
       try {
         await syncOne(nb);
       } catch (err) {
-        console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, err);
+        const reason = err instanceof Error
+          ? err.message
+          : (err && typeof err === 'object' && typeof (err as { message?: unknown }).message === 'string'
+              ? (err as { message: string }).message
+              : (() => { try { return JSON.stringify(err); } catch { return String(err); } })());
+        console.warn(`[sync] 书籍 ${nb.book!.title} 重试仍失败：`, reason);
+        failureSamples.push({ title: nb.book!.title || nb.bookId, reason });
         failedBooks.push(nb);
+      } finally {
+        retryDone++;
+        onProgress?.({
+          done,
+          total: targets.length + retryTotal,
+          phase: 'contents',
+          stage: `重试失败书籍 ${retryDone}/${retryTotal}`,
+        });
       }
     }
   }
@@ -327,13 +486,13 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
   // 3. 统计快照 + FTS + lastSyncAt
   try {
     const stats = await fetchReadingStats('overall');
-    const finishedRow = await db.select<{ c: number }[]>(
+    const finishedRow = await db.select<{ c: number }>(
       'SELECT COUNT(*) as c FROM books WHERE markedStatus = 4',
     );
     await db.execute(
       'INSERT OR REPLACE INTO stats_snapshots (date, totalReadTime, readDays, bookCount, finishedCount, noteTotal) VALUES (?, ?, ?, ?, ?, ?)',
       [new Date().toISOString().slice(0, 10), stats.totalReadTime || 0, stats.readDays || 0,
-       bookRows.size, finishedRow[0]?.c || 0,
+       bookRows.size, Number(finishedRow[0]?.c || 0),
        (notebooks.books || []).reduce((s, nb) => s + nb.noteCount + nb.reviewCount + nb.bookmarkCount, 0)],
     );
   } catch (err) {
@@ -344,11 +503,16 @@ export async function syncAll(onProgress?: (p: SyncProgress) => void): Promise<S
     'lastSyncAt',
     String(Math.floor(Date.now() / 1000)),
   ]);
-  return { failedCount: failedBooks.length, changedCount: targets.length, totalCount: allNotebookBooks.length };
+  return {
+    failedCount: failedBooks.length,
+    failureSamples: failureSamples.slice(0, 3),
+    changedCount: targets.length,
+    totalCount: allNotebookBooks.length,
+  };
 }
 
 async function syncBookContents(
-  db: Database,
+  db: DbConnection,
   bookId: string,
   bookmarks: BookmarkItem[],
   chapters: ChapterItem[],
@@ -360,30 +524,71 @@ async function syncBookContents(
   await db.execute('DELETE FROM reviews WHERE bookId = ?', [bookId]);
   await db.execute('DELETE FROM chapters WHERE bookId = ?', [bookId]);
 
-  for (const bm of bookmarks) {
-    await db.execute(
+  // 行数据先构造为参数数组；executeMany（单事务批量）可用时一次写入，
+  // 否则退化为逐条（tauri/capacitor 直连插件逐条也很快）
+  const bmRows = bookmarks.map(bm => [
+    bm.bookmarkId, bookId, bm.chapterUid ?? 0, bm.markText || '',
+    bm.createTime || 0, bm.type ?? 0, bm.range || '', bm.colorStyle ?? 0,
+  ]);
+  const chRows = chapters.map(ch => [bookId, ch.chapterUid, ch.chapterIdx ?? 0, ch.title || '']);
+  // 可空字段统一写空串哨兵（''）而非 null：JS null 跨鸿蒙桥后类型失真，
+  // 会触发 executeSql "must be ValueObject" 参数错误（划线表无 null 字段故不受影响）；
+  // 读取端 nullableStr/nullableNum 将 '' 与 null 同等对待
+  const rvRows = reviews.map(rv => [
+    rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? '',
+    rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? '',
+    rv.review.abstract ?? '', rv.review.type ?? '', rv.likesCount ?? '',
+    rv.review.range ?? '',
+  ]);
+
+  if (db.executeMany) {
+    await db.executeMany(
       `INSERT OR REPLACE INTO bookmarks (bookmarkId, bookId, chapterUid, markText, createTime, type, range, colorStyle)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [bm.bookmarkId, bookId, bm.chapterUid ?? 0, bm.markText || '',
-       bm.createTime || 0, bm.type ?? 0, bm.range || '', bm.colorStyle ?? 0],
-    );
-  }
-  for (const ch of chapters) {
-    await db.execute(
-      `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`,
-      [bookId, ch.chapterUid, ch.chapterIdx ?? 0, ch.title || ''],
-    );
-  }
-  for (const rv of reviews) {
-    await db.execute(
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, bmRows);
+    await db.executeMany(
+      `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`, chRows);
+    await db.executeMany(
       `INSERT OR REPLACE INTO reviews (reviewId, bookId, content, htmlContent, createTime, star, chapterName, abstract, type, likesCount, range)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [rv.review.reviewId, bookId, rv.review.content || '', rv.review.htmlContent ?? null,
-       rv.review.createTime || 0, rv.review.star ?? 0, rv.review.chapterName ?? null,
-       rv.review.abstract ?? null, rv.review.type ?? null, rv.likesCount ?? null,
-       rv.review.range ?? null],
-    );
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, rvRows);
+  } else {
+    for (const row of bmRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO bookmarks (bookmarkId, bookId, chapterUid, markText, createTime, type, range, colorStyle)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, row);
+    }
+    for (const row of chRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO chapters (bookId, chapterUid, chapterIdx, title) VALUES (?, ?, ?, ?)`, row);
+    }
+    for (const row of rvRows) {
+      await db.execute(
+        `INSERT OR REPLACE INTO reviews (reviewId, bookId, content, htmlContent, createTime, star, chapterName, abstract, type, likesCount, range)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, row);
+    }
   }
+
+  // 落库校验：并发写曾出现"写完但行丢失"（事务被并发批写回滚/吞提交），静默丢数破坏 syncedAt 语义。
+  // 此处读回计数对账，不达标即抛错，让该书进入重试而不是被标记为已同步。
+  const verify = await db.select<{ bm: number; rv: number }>(
+    `SELECT (SELECT COUNT(*) FROM bookmarks WHERE bookId = ?) as bm,
+            (SELECT COUNT(*) FROM reviews WHERE bookId = ?) as rv`,
+    [bookId, bookId],
+  );
+  const bmActual = Number(verify[0]?.bm || 0);
+  const rvActual = Number(verify[0]?.rv || 0);
+  if (bmActual < bmRows.length || rvActual < rvRows.length) {
+    throw new Error(`落库校验失败：划线 ${bmActual}/${bmRows.length}，想法 ${rvActual}/${rvRows.length}`);
+  }
+}
+
+/** 可空文本列：'' 哨兵与 null 同等对待（鸿蒙桥写库方案，见 syncBookContents） */
+function nullableStr(v: unknown): string | undefined {
+  return v == null || v === '' ? undefined : String(v);
+}
+
+/** 可空数值列：'' 哨兵与 null 同等对待 */
+function nullableNum(v: unknown): number | null {
+  return v == null || v === '' ? null : Number(v);
 }
 
 // ============ 查询 ============
@@ -413,18 +618,19 @@ function rowToNotebookItem(row: BookRow): NotebookItem {
 }
 
 export async function hasLocalData(): Promise<boolean> {
-  if (!isTauri) return false;
+  if (!isNativeDb) return false;
   try {
     const db = await getDb();
-    const rows = await db.select<{ value: string }[]>(
+    const rows = await db.select<{ value: string }>(
       'SELECT value FROM sync_meta WHERE key = ?', ['lastSyncAt'],
     );
     if (rows.length === 0) return false;
     // 同步不完整（有笔记的书未全部同步成功）时不视为可用本地库，读路径回退在线
-    const missing = await db.select<{ c: number }[]>(
+    const missing = await db.select<{ c: number }>(
       'SELECT COUNT(*) as c FROM books WHERE (noteCount > 0 OR reviewCount > 0) AND syncedAt = 0',
     );
-    return (missing[0]?.c || 0) === 0;
+    // 鸿蒙桥的查询值为字符串（如 "0"），严格相等前必须转数字
+    return Number(missing[0]?.c || 0) === 0;
   } catch {
     return false;
   }
@@ -432,17 +638,17 @@ export async function hasLocalData(): Promise<boolean> {
 
 /** 同步状态：上次同步时间与未同步完成的笔记书数量（用于设置页提示） */
 export async function getSyncStatus(): Promise<{ lastSyncAt: number | null; missingCount: number }> {
-  if (!isTauri) return { lastSyncAt: null, missingCount: 0 };
+  if (!isNativeDb) return { lastSyncAt: null, missingCount: 0 };
   try {
     const db = await getDb();
     const [rows, missing] = await Promise.all([
-      db.select<{ value: string }[]>("SELECT value FROM sync_meta WHERE key = 'lastSyncAt'"),
-      db.select<{ c: number }[]>(
+      db.select<{ value: string }>("SELECT value FROM sync_meta WHERE key = 'lastSyncAt'"),
+      db.select<{ c: number }>(
         'SELECT COUNT(*) as c FROM books WHERE (noteCount > 0 OR reviewCount > 0) AND syncedAt = 0'),
     ]);
     return {
       lastSyncAt: rows.length > 0 ? parseInt(rows[0].value, 10) : null,
-      missingCount: missing[0]?.c || 0,
+      missingCount: Number(missing[0]?.c || 0),
     };
   } catch {
     return { lastSyncAt: null, missingCount: 0 };
@@ -472,7 +678,11 @@ export interface DbDirInfo {
 }
 
 export async function getDbDirInfo(): Promise<DbDirInfo> {
-  if (!isTauri) return { customDir: null, defaultDir: null, currentPath: '' };
+  // 目录自定义仅桌面（Rust 命令）；移动端返回应用沙盒内的固定位置
+  if (!isTauri) {
+    return { customDir: null, defaultDir: null, currentPath: isNativeDb ? `${DB_CONN_NAME}（应用沙盒）` : '' };
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
   const customDir = getCustomDbDir();
   const defaultDir = await invoke<string | null>('db_get_default_dir').catch(() => null);
   const dir = customDir ?? defaultDir;
@@ -486,11 +696,16 @@ export async function getDbDirInfo(): Promise<DbDirInfo> {
 /**
  * 切换数据库存储目录：关闭旧连接 → 迁移数据库文件到新目录 → 切换并验证加载。
  * 失败时回滚到原目录并恢复连接。返回是否迁移了既有数据（false = 切到空目录，需重新同步）。
+ * 仅桌面版支持（移动端应用沙盒不允许任意目录访问）。
  */
 export async function changeDbDir(newDir: string | null): Promise<boolean> {
+  if (!isTauri) {
+    throw new Error('移动端不支持自定义存储目录');
+  }
   const prevDir = getCustomDbDir();
   if ((prevDir ?? null) === (newDir ?? null)) return true;
 
+  const { invoke } = await import('@tauri-apps/api/core');
   const defaultDir = await invoke<string>('db_get_default_dir');
   const oldDir = prevDir ?? defaultDir;
 
@@ -498,7 +713,7 @@ export async function changeDbDir(newDir: string | null): Promise<boolean> {
   if (dbPromise) {
     const old = dbPromise;
     dbPromise = null;
-    await old.then(db => db.close()).catch(() => undefined);
+    await old.then(db => db.close?.()).catch(() => undefined);
   }
 
   const apply = (dir: string | null) => {
@@ -527,10 +742,10 @@ export async function changeDbDir(newDir: string | null): Promise<boolean> {
 }
 
 export async function getLastSyncAt(): Promise<number | null> {
-  if (!isTauri) return null;
+  if (!isNativeDb) return null;
   try {
     const db = await getDb();
-    const rows = await db.select<{ value: string }[]>(
+    const rows = await db.select<{ value: string }>(
       'SELECT value FROM sync_meta WHERE key = ?', ['lastSyncAt'],
     );
     return rows.length > 0 ? parseInt(rows[0].value, 10) : null;
@@ -547,22 +762,22 @@ export interface LocalStats {
 }
 
 export async function getLocalStats(): Promise<LocalStats | null> {
-  if (!isTauri) return null;
+  if (!isNativeDb) return null;
   try {
     const db = await getDb();
     const [books, bms, rvs] = await Promise.all([
-      db.select<{ c: number }[]>('SELECT COUNT(*) as c FROM books'),
-      db.select<{ c: number }[]>('SELECT COUNT(*) as c FROM bookmarks'),
-      db.select<{ c: number }[]>('SELECT COUNT(*) as c FROM reviews'),
+      db.select<{ c: number }>('SELECT COUNT(*) as c FROM books'),
+      db.select<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks'),
+      db.select<{ c: number }>('SELECT COUNT(*) as c FROM reviews'),
     ]);
-    const noteBooks = await db.select<{ c: number }[]>(
+    const noteBooks = await db.select<{ c: number }>(
       'SELECT COUNT(*) as c FROM books WHERE noteCount > 0 OR reviewCount > 0',
     );
     return {
-      bookCount: books[0]?.c || 0,
-      noteBookCount: noteBooks[0]?.c || 0,
-      bookmarkCount: bms[0]?.c || 0,
-      reviewCount: rvs[0]?.c || 0,
+      bookCount: Number(books[0]?.c || 0),
+      noteBookCount: Number(noteBooks[0]?.c || 0),
+      bookmarkCount: Number(bms[0]?.c || 0),
+      reviewCount: Number(rvs[0]?.c || 0),
     };
   } catch {
     return null;
@@ -572,7 +787,7 @@ export async function getLocalStats(): Promise<LocalStats | null> {
 /** 本地查询笔记书列表（对齐 fetchAllNotebooks 的返回结构） */
 export async function queryNotebooks(): Promise<NotebookItem[]> {
   const db = await getDb();
-  const rows = await db.select<BookRow[]>(
+  const rows = await db.select<BookRow>(
     'SELECT * FROM books WHERE noteCount > 0 OR reviewCount > 0 ORDER BY sort DESC',
   );
   return rows.map(rowToNotebookItem);
@@ -581,7 +796,7 @@ export async function queryNotebooks(): Promise<NotebookItem[]> {
 /** 本地查询书架全部书（对齐 fetchShelf 的书列表） */
 export async function queryShelfBooks(): Promise<BookItem[]> {
   const db = await getDb();
-  const rows = await db.select<BookRow[]>('SELECT * FROM books ORDER BY readUpdateTime DESC');
+  const rows = await db.select<BookRow>('SELECT * FROM books ORDER BY readUpdateTime DESC');
   return rows.map(rowToBookItem);
 }
 
@@ -595,11 +810,11 @@ export interface BookDetailResult {
 export async function queryBookDetail(bookId: string): Promise<BookDetailResult> {
   const db = await getDb();
   const [bmRows, chRows, rvRows] = await Promise.all([
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       'SELECT * FROM bookmarks WHERE bookId = ? ORDER BY createTime ASC', [bookId]),
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       'SELECT * FROM chapters WHERE bookId = ? ORDER BY chapterIdx ASC', [bookId]),
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       'SELECT * FROM reviews WHERE bookId = ? ORDER BY createTime ASC', [bookId]),
   ]);
 
@@ -614,16 +829,16 @@ export async function queryBookDetail(bookId: string): Promise<BookDetailResult>
     title: String(r.title || ''),
   }));
   const reviews: ReviewItem[] = rvRows.map(r => ({
-    likesCount: r.likesCount == null ? undefined : Number(r.likesCount),
+    likesCount: nullableNum(r.likesCount) ?? undefined,
     review: {
       reviewId: String(r.reviewId), content: String(r.content || ''),
-      htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+      htmlContent: nullableStr(r.htmlContent),
       createTime: Number(r.createTime || 0), star: Number(r.star || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
-      abstract: r.abstract == null ? undefined : String(r.abstract),
-      range: r.range == null ? undefined : String(r.range),
+      chapterName: nullableStr(r.chapterName),
+      abstract: nullableStr(r.abstract),
+      range: nullableStr(r.range),
       chapterUid: r.chapterUid == null ? undefined : Number(r.chapterUid),
-      type: r.type == null ? undefined : Number(r.type),
+      type: nullableNum(r.type) ?? undefined,
     },
   }));
   return { bookmarks, chapters, reviews };
@@ -647,12 +862,12 @@ export interface TopReviewItem {
 /** 本地点赞排行：想法+书评按 likesCount 降序 */
 export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
   const db = await getDb();
-  const rows = await db.select<{ [k: string]: unknown }[]>(
-    `SELECT r.reviewId, r.bookId, r.content, r.htmlContent, r.createTime, r.likesCount, r.type, r.chapterName,
+  const rows = await db.select<{ [k: string]: unknown }>(
+    `SELECT r.reviewId, r.bookId, r.content, r.htmlContent, r.createTime, CAST(r.likesCount AS INTEGER) AS likesCount, r.type, r.chapterName,
             b.title AS bookTitle, b.author AS bookAuthor, b.cover AS bookCover
      FROM reviews r JOIN books b ON b.bookId = r.bookId
-     WHERE r.likesCount > 0
-     ORDER BY r.likesCount DESC, r.createTime DESC
+     WHERE CAST(r.likesCount AS INTEGER) > 0
+     ORDER BY CAST(r.likesCount AS INTEGER) DESC, r.createTime DESC
      LIMIT ?`,
     [limit],
   );
@@ -663,11 +878,11 @@ export async function queryTopReviews(limit = 200): Promise<TopReviewItem[]> {
     bookAuthor: String(r.bookAuthor || ''),
     bookCover: String(r.bookCover || ''),
     content: String(r.content || ''),
-    htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+    htmlContent: nullableStr(r.htmlContent),
     createTime: Number(r.createTime || 0),
     likesCount: Number(r.likesCount || 0),
-    type: r.type == null ? null : Number(r.type),
-    chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+    type: nullableNum(r.type),
+    chapterName: nullableStr(r.chapterName),
   }));
 }
 
@@ -684,10 +899,19 @@ export interface OnThisDayItem {
 export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
   const db = await getDb();
   const now = new Date();
-  const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const thisYear = String(now.getFullYear());
-  // unixepoch 默认按 UTC 解析，加 localtime 修正为本地时区（ createTime 是北京时间语境下的记录）
-  const timeCond = `strftime('%m-%d', %s, 'unixepoch', 'localtime') = ? AND strftime('%Y', %s, 'unixepoch', 'localtime') < ?`;
+
+  // 精确区间法：为每个历年构造「当年今天 00:00:00 ~ 23:59:59」的本地时间戳区间，
+  // WHERE createTime BETWEEN 区间 OR 连接。纯数字比较——
+  // 不用 strftime/localtime（华为 RDB 兼容问题），也不用固定窗口粗筛（实测
+  // DESC LIMIT 5000 只覆盖最近几个月，9 月的记录永远落在窗口外导致查询为空）。
+  const ranges: Array<[number, number]> = [];
+  for (let y = now.getFullYear() - 1; y >= now.getFullYear() - 15 && y >= 2015; y--) {
+    const start = Math.floor(new Date(y, now.getMonth(), now.getDate(), 0, 0, 0).getTime() / 1000);
+    const end = Math.floor(new Date(y, now.getMonth(), now.getDate(), 23, 59, 59).getTime() / 1000);
+    ranges.push([start, end]);
+  }
+  const timeCond = ranges.map(() => '?? BETWEEN ? AND ?').join(' OR ');
+  const rangeParams = ranges.flat();
 
   const toBook = (r: { [k: string]: unknown }): BookItem => ({
     bookId: String(r.bookId), title: String(r.title || ''), author: String(r.author || ''),
@@ -697,21 +921,21 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
   });
 
   const [bmHits, rvHits] = await Promise.all([
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               bm.bookmarkId, bm.markText, bm.createTime
        FROM bookmarks bm JOIN books b ON b.bookId = bm.bookId
-       WHERE ${timeCond.replace(/%s/g, 'bm.createTime')}
+       WHERE ${timeCond.replace(/\?\?/g, 'bm.createTime')}
        ORDER BY bm.createTime ASC LIMIT ?`,
-      [monthDay, thisYear, limit],
+      [...rangeParams, limit],
     ),
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               r.reviewId, r.content, r.htmlContent, r.createTime, r.type
        FROM reviews r JOIN books b ON b.bookId = r.bookId
-       WHERE ${timeCond.replace(/%s/g, 'r.createTime')}
+       WHERE ${timeCond.replace(/\?\?/g, 'r.createTime')}
        ORDER BY r.createTime ASC LIMIT ?`,
-      [monthDay, thisYear, limit],
+      [...rangeParams, limit],
     ),
   ]);
 
@@ -724,24 +948,24 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
       book: toBook(r),
     })),
     ...rvHits.map(r => ({
-      kind: (r.type === 4 ? 'review' : 'thought') as 'review' | 'thought',
+      kind: (Number(r.type) === 4 ? 'review' : 'thought') as 'review' | 'thought',
       content: String(r.content || ''),
-      htmlContent: r.htmlContent == null ? undefined : String(r.htmlContent),
+      htmlContent: nullableStr(r.htmlContent),
       createTime: Number(r.createTime || 0),
       targetId: String(r.reviewId),
       book: toBook(r),
     })),
   ];
   items.sort((a, b) => b.createTime - a.createTime);
-  return items;
+  return items.slice(0, limit);
 }
 
 /** 本地查询某本书是否含书评（type=4），用于书架卡片 ⭐ 徽章 */
 export async function queryHasBookReview(bookId: string): Promise<boolean> {
   const db = await getDb();
-  const rows = await db.select<{ c: number }[]>(
+  const rows = await db.select<{ c: number }>(
     'SELECT COUNT(*) as c FROM reviews WHERE bookId = ? AND type = 4', [bookId]);
-  return (rows[0]?.c || 0) > 0;
+  return Number(rows[0]?.c || 0) > 0;
 }
 
 export interface LocalSearchResult {
@@ -766,7 +990,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
   const pattern = `%${escaped}%`;
 
   const [bmHits, rvHits] = await Promise.all([
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               bm.bookmarkId, bm.markText, bm.createTime, bm.chapterUid,
               (SELECT title FROM chapters c WHERE c.bookId = bm.bookId AND c.chapterUid = bm.chapterUid) AS chapterName
@@ -774,7 +998,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
        WHERE bm.markText LIKE ? ESCAPE '\\'
        ORDER BY bm.createTime DESC LIMIT ?`,
       [pattern, limit]),
-    db.select<{ [k: string]: unknown }[]>(
+    db.select<{ [k: string]: unknown }>(
       `SELECT b.bookId, b.title, b.author, b.cover, b.category, b.readUpdateTime, b.finishReading,
               r.reviewId, r.content, r.createTime, r.chapterName, r.type
        FROM reviews r JOIN books b ON b.bookId = r.bookId
@@ -797,7 +1021,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
       targetId: String(r.bookmarkId),
       content: String(r.markText || ''),
       createTime: Number(r.createTime || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+      chapterName: nullableStr(r.chapterName),
     })),
     ...rvHits.map(r => ({
       kind: 'thought' as const,
@@ -805,7 +1029,7 @@ export async function ftsSearch(keyword: string, limit = 500): Promise<LocalSear
       targetId: String(r.reviewId),
       content: String(r.content || ''),
       createTime: Number(r.createTime || 0),
-      chapterName: r.chapterName == null ? undefined : String(r.chapterName),
+      chapterName: nullableStr(r.chapterName),
     })),
   ];
   results.sort((a, b) => b.createTime - a.createTime);

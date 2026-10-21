@@ -19,10 +19,29 @@ const kindBadges: Record<OnThisDayItem['kind'], { label: string; bg: string; col
 };
 
 /** 往年今天：历年同月同日的划线/想法/书评，按年份分组（仅桌面版本地库，毫秒级查询） */
+const CARD_COLLAPSE_KEY = 'weread-onthisday-collapsed';
+
 export default function OnThisDayCard({ onSelectBook }: OnThisDayCardProps) {
   const [items, setItems] = useState<OnThisDayItem[] | null>(null);
   const [allYearsExpanded, setAllYearsExpanded] = useState(false);
   const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set());
+  // 卡片总开关：默认收起为一行标题，点击展开（偏好持久化，三端一致）
+  const [cardCollapsed, setCardCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CARD_COLLAPSE_KEY) !== 'expanded';
+    } catch {
+      return true;
+    }
+  });
+  const toggleCard = () => {
+    setCardCollapsed(v => {
+      const next = !v;
+      try {
+        localStorage.setItem(CARD_COLLAPSE_KEY, next ? 'collapsed' : 'expanded');
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -85,17 +104,26 @@ export default function OnThisDayCard({ onSelectBook }: OnThisDayCardProps) {
       className="rounded-2xl border p-4 sm:p-6 mb-6"
       style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)', boxShadow: 'var(--shadow-sm)' }}
     >
-      <div className="flex items-center justify-between gap-3 mb-4">
+      <button
+        type="button"
+        onClick={toggleCard}
+        aria-expanded={!cardCollapsed}
+        className="w-full flex items-center justify-between gap-3 mb-2 text-left"
+      >
         <div className="flex items-center gap-2">
           <span className="text-lg">📖</span>
           <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>往年今天</h3>
+          <span
+            className="transition-transform text-sm"
+            style={{ color: 'var(--text-muted)', transform: cardCollapsed ? 'none' : 'rotate(90deg)' }}
+          >›</span>
         </div>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
           {dateLabel} · 共 {items.length} 条回忆
         </p>
-      </div>
+      </button>
 
-      <div className="space-y-4">
+      {cardCollapsed ? null : <div className="space-y-4">
         {visibleGroups.map(([year, list]) => {
           const yearExpanded = expandedYears.has(year);
           const visibleList = yearExpanded ? list : list.slice(0, PER_YEAR_COLLAPSED);
@@ -168,21 +196,21 @@ export default function OnThisDayCard({ onSelectBook }: OnThisDayCardProps) {
             </div>
           );
         })}
-      </div>
 
-      {groups.length > YEARS_COLLAPSED && (
-        <button
-          type="button"
-          onClick={fullyExpanded ? collapseAll : expandAll}
-          aria-expanded={fullyExpanded}
-          className="mt-4 w-full rounded-xl py-2 text-sm font-medium transition-colors"
-          style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
-        >
-          {fullyExpanded
-            ? '全部收起'
-            : `展开全部年份（还有 ${groups.length - YEARS_COLLAPSED} 个年份、${items.length - collapsedPreviewCount} 条）`}
-        </button>
-      )}
+        {groups.length > YEARS_COLLAPSED && (
+          <button
+            type="button"
+            onClick={fullyExpanded ? collapseAll : expandAll}
+            aria-expanded={fullyExpanded}
+            className="mt-4 w-full rounded-xl py-2 text-sm font-medium transition-colors"
+            style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+          >
+            {fullyExpanded
+              ? '全部收起'
+              : `展开全部年份（还有 ${groups.length - YEARS_COLLAPSED} 个年份、${items.length - collapsedPreviewCount} 条）`}
+          </button>
+        )}
+      </div>}
     </section>
   );
 }
