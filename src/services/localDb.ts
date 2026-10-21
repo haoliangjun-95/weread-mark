@@ -1241,6 +1241,37 @@ export async function queryAnnualReport(year: number): Promise<AnnualReportData>
   };
 }
 
+// ============ 活跃热力图 ============
+
+/**
+ * 年度每日痕迹数（划线+想法+书评，按本地时区归日，键 'M-D'）：
+ * 只拉两列数字时间戳到 JS 聚合——SQL 按天分组要么用 UTC 天（与本地差 8 小时），
+ * 要么用日期函数（鸿蒙 RDB 对 strftime/localtime 兼容差），都不如直接聚合。
+ */
+export async function queryDayCounts(year: number): Promise<Record<string, number>> {
+  const db = await getDb();
+  const start = Math.floor(new Date(year, 0, 1).getTime() / 1000);
+  const end = Math.floor(new Date(year + 1, 0, 1).getTime() / 1000);
+  const [bmRows, rvRows] = await Promise.all([
+    db.select<{ createTime: unknown }>(
+      'SELECT createTime FROM bookmarks WHERE createTime >= ? AND createTime < ?', [start, end]),
+    db.select<{ createTime: unknown }>(
+      'SELECT createTime FROM reviews WHERE createTime >= ? AND createTime < ?', [start, end]),
+  ]);
+  const counts: Record<string, number> = {};
+  const add = (ts: unknown) => {
+    const n = Number(ts);
+    if (!n) return;
+    const d = new Date(n * 1000);
+    if (d.getFullYear() !== year) return; // 时区边界保护
+    const key = `${d.getMonth() + 1}-${d.getDate()}`;
+    counts[key] = (counts[key] || 0) + 1;
+  };
+  bmRows.forEach(r => add(r.createTime));
+  rvRows.forEach(r => add(r.createTime));
+  return counts;
+}
+
 // ============ 全库导出 ============
 
 export interface FullExportData {
