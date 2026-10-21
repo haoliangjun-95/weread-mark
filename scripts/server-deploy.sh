@@ -28,14 +28,26 @@ main() {
 
   cd "$APP_DIR"
 
-  # 拉取远端引用（不合并），网络失败仅告警退出
-  if ! git fetch origin "$BRANCH" 2>&1 | while IFS= read -r line; do log "git: $line"; done; then
-    log "git fetch 失败（网络异常？），本轮跳过"
+  # 拉取远端引用（不合并）。ghproxy 偶发 502/断流，重试 3 次降低漏检概率。
+  fetch_ok=0
+  for attempt in 1 2 3; do
+    if git fetch origin "$BRANCH" 2>&1 | while IFS= read -r line; do log "git: $line"; done; then
+      fetch_ok=1
+      break
+    fi
+    log "git fetch 第 ${attempt} 次失败，重试..."
+    sleep 5
+  done
+  if [[ "$fetch_ok" != "1" ]]; then
+    log "git fetch 连续失败，本轮跳过"
     exit 0
   fi
 
+  # 用 FETCH_HEAD 比较：'git fetch origin <branch>' 在部分配置下不更新
+  # refs/remotes/origin/main（实测服务器上连续多轮只写 FETCH_HEAD），
+  # 用旧 origin/main 比较会永远判定无新提交，部署静默失效
   LOCAL=$(git rev-parse HEAD)
-  REMOTE=$(git rev-parse "origin/$BRANCH")
+  REMOTE=$(git rev-parse FETCH_HEAD)
   if [[ "$LOCAL" == "$REMOTE" ]]; then
     exit 0  # 无新提交，静默退出
   fi
