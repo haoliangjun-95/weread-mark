@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { BookItem } from '../types/weread';
 import type { HighlightTarget } from '../App';
 import OnThisDayCard from '../components/OnThisDayCard';
+import StatsTrendCard from '../components/StatsTrendCard';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -449,6 +450,7 @@ export default function Dashboard({ hasKey, onSelectBook }: DashboardProps) {
        <div className="mb-6 sm:mb-8">
        {/* 往年今天（桌面版本地库，纯本地查询） */}
        {onSelectBook && <OnThisDayCard onSelectBook={onSelectBook} />}
+       <StatsTrendCard />
          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
            <div>
              <h2 className="text-xl sm:text-2xl font-bold text-gray-900">

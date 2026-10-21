@@ -960,6 +960,30 @@ export async function queryOnThisDay(limit = 500): Promise<OnThisDayItem[]> {
   return items.slice(0, limit);
 }
 
+export interface StatsSnapshotRow {
+  date: string;
+  totalReadTime: number;
+  readDays: number;
+  bookCount: number;
+  finishedCount: number;
+  noteTotal: number;
+}
+
+/** 本地查询统计快照时间序列（趋势卡片数据源，按日期升序） */
+export async function queryStatsSnapshots(): Promise<StatsSnapshotRow[]> {
+  const db = await getDb();
+  const rows = await db.select<{ [k: string]: unknown }>(
+    'SELECT date, totalReadTime, readDays, bookCount, finishedCount, noteTotal FROM stats_snapshots ORDER BY date ASC');
+  return rows.map(r => ({
+    date: String(r.date || ''),
+    totalReadTime: Number(r.totalReadTime || 0),
+    readDays: Number(r.readDays || 0),
+    bookCount: Number(r.bookCount || 0),
+    finishedCount: Number(r.finishedCount || 0),
+    noteTotal: Number(r.noteTotal || 0),
+  }));
+}
+
 /** 本地查询某本书是否含书评（type=4），用于书架卡片 ⭐ 徽章 */
 export async function queryHasBookReview(bookId: string): Promise<boolean> {
   const db = await getDb();

@@ -9,9 +9,10 @@ import RankView from './pages/RankView';
 import SearchView from './pages/SearchView';
 import SettingsView from './pages/SettingsView';
 import Toaster from './components/Toast';
+import ThrottleBanner from './components/ThrottleBanner';
+import { isNativeApp, syncAll, getSyncStatus } from './services/localDb';
+import { markSynced, handleApiKeyChanged } from './services/dataService';
 import { getApiKey } from './services/weread';
-import { isNativeApp } from './services/localDb';
-import { handleApiKeyChanged } from './services/dataService';
 import type { BookItem } from './types/weread';
 
  export type ViewType = 'home' | 'dashboard' | 'shelf' | 'notes' | 'reviews' | 'rank' | 'settings';
@@ -159,6 +160,30 @@ function App() {
     }
   }, [currentView]);
 
+  // 启动自动增量同步：原生端（有本地库）且距上次同步超过 12 小时时，
+  // 后台静默执行增量（增量通常只拉几本有变化的书，配额友好），失败不打扰用户
+  useEffect(() => {
+    if (!isNativeApp || !hasKey) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { lastSyncAt } = await getSyncStatus();
+        if (cancelled) return;
+        const STALE_MS = 12 * 3600 * 1000;
+        if (lastSyncAt && Date.now() - lastSyncAt * 1000 < STALE_MS) return;
+        const result = await syncAll();
+        if (cancelled) return;
+        markSynced();
+        if (result.failedCount > 0) {
+          console.warn(`[autoSync] 增量同步 ${result.failedCount} 本失败，等待下次`);
+        }
+      } catch (err) {
+        console.warn('[autoSync] 自动同步失败（不影响使用）：', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hasKey]);
+
   useEffect(() => {
     window.addEventListener('storage', syncApiKeyState);
     const id = setInterval(syncApiKeyState, 1000);
@@ -214,6 +239,7 @@ function App() {
       </main>
       <Footer />
       <Toaster />
+      <ThrottleBanner />
       {updateAvailable && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[99999] px-4 py-3 rounded-xl shadow-lg border flex items-center gap-3 text-sm"
           style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}>

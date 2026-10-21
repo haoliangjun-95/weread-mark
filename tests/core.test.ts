@@ -3,7 +3,6 @@
  * 通过 mock callApi 的底层 fetch，不发起真实请求。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchAllBookReviews } from '../src/services/weread';
 
 // ---------- sanitize：净化器（XSS 防线，回归重点） ----------
 import { sanitizeRichText, richTextToPlain } from '../src/utils/sanitize';
