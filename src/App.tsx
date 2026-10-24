@@ -47,8 +47,11 @@ function isDesktopView(view: ViewType): boolean {
 
 function App() {
   // 版本更新检测：__BUILD_TIME__ 每次构建必变（version 号需要手动 bump 不可靠），
-  // 检测到新构建时提示用户刷新，避免打断进行中的操作
+  // 检测到新构建时提示用户刷新，避免打断进行中的操作。
+  // 原生端（桌面/移动/鸿蒙）页面资源随安装包固定，不存在页面级更新——
+  // 装新包后残留的旧构建时间会误触发横幅，直接禁用。
   const [updateAvailable, setUpdateAvailable] = useState(() => {
+    if (isNativeApp) return false;
     const stored = localStorage.getItem(VERSION_KEY);
     return !!stored && stored !== __BUILD_TIME__;
   });
