@@ -52,8 +52,10 @@ export default function DashboardCharts({
 }: DashboardChartsProps) {
   return (
          <div className="space-y-6 sm:space-y-8">
-            {/* 最近30天阅读趋势 (年份和总计模式) */}
-            {((timeMode === 'annually' || timeMode === 'overall') && last30DaysTrend.length > 0) && (
+            {/* 最近30天阅读趋势：数据始终是「今天近30天」，与选中年份无关——
+                往年视角下出现会语义错乱，仅当年与总计模式显示 */}
+            {((timeMode === 'overall' || (timeMode === 'annually' && selectedYear === new Date().getFullYear()))
+              && last30DaysTrend.length > 0) && (
               <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-4 sm:mb-6">
                   <span className="text-xl">📉</span>
