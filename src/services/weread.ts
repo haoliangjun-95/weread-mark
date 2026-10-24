@@ -7,6 +7,7 @@ import type {
   ReviewsData,
   ReviewItem,
 } from '../types/weread';
+import { runtimeEnv } from './dbInterface';
 
 const API_URL = import.meta.env.VITE_WEREAD_API_URL || '/api/agent/gateway';
 const SKILL_VERSION = import.meta.env.VITE_SKILL_VERSION || '1.0.4';
@@ -161,6 +162,28 @@ interface HarmonyHttpBridge {
 
 type GatewayBody = { errcode?: number; errmsg?: string };
 
+type HttpFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }
+) => Promise<Response>;
+
+let tauriHttpFetch: HttpFetch | null = null;
+
+/**
+ * fetch 通道选择：网关 CORS 只允许 weread.qq.com 源，桌面端 WebView origin 是
+ * tauri://localhost，直接 fetch 会被 WKWebView 跨域拦截——tauri 环境改用
+ * tauri-plugin-http 的 fetch（请求由 Rust 层发出，不经 WebView，无 CORS 限制）。
+ */
+async function httpFetch(url: string, init: Parameters<HttpFetch>[1]): Promise<Response> {
+  if (runtimeEnv === 'tauri') {
+    if (!tauriHttpFetch) {
+      tauriHttpFetch = (await import('@tauri-apps/plugin-http')).fetch;
+    }
+    return tauriHttpFetch(url, init);
+  }
+  return fetch(url, init);
+}
+
 async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?: AbortSignal): Promise<T> {
   const payload = JSON.stringify({
     ...params,
@@ -188,23 +211,28 @@ async function requestOnce<T>(params: ApiRequestParams, apiKey: string, signal?:
       body = null;
     }
   } else {
-    // 15 秒超时，防止个别请求永久挂起拖死整页加载
-    const timeoutSignal = AbortSignal.timeout(15000);
+    // 30 秒超时：原生端直连网关时，鉴权通过后 skill 要真实拉取微信读书数据，
+    // 冷启动首请求可超过 15 秒（曾致整轮同步被误报「网络请求失败」）
+    const timeoutSignal = AbortSignal.timeout(30000);
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
     let response: Response;
     try {
-      response = await fetch(API_URL, {
+      response = await httpFetch(API_URL, {
         method: 'POST',
         headers,
         body: payload,
         signal: requestSignal,
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        throw err;
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      const detail = err instanceof Error ? err.message : String(err);
+      // plugin-http（桌面端）超时/取消时 Rust 侧返回 Request cancelled，
+      // 不是 AbortError——单独转译，避免误导性的「检查网络连接」
+      if (/cancelled/i.test(detail)) {
+        throw new Error(`请求超时或被取消（${params.api_name}），网关响应较慢，请稍后重试`, { cause: err });
       }
-      throw new Error(`网络请求失败（${params.api_name}），请检查网络连接后重试`, { cause: err });
+      throw new Error(`网络请求失败（${params.api_name}）：${detail}`, { cause: err });
     }
     httpStatus = response.status;
     if (response.ok) {

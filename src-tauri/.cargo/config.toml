@@ -1,0 +1,11 @@
+# 本机 ~/.gitconfig 的 http.proxy 指向 127.0.0.1:7890（Clash，常关），
+# cargo 的代理配置会 fallback 到 gitconfig，代理软件没开时构建必挂：
+# 这里显式置空代理并改走 rsproxy 国内镜像，保证离线代理环境也能拉依赖。
+[http]
+proxy = ""
+
+[source.crates-io]
+replace-with = "ustc-sparse"
+
+[source.ustc-sparse]
+registry = "sparse+https://mirrors.ustc.edu.cn/crates.io-index/"
